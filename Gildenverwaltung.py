@@ -119,6 +119,7 @@ class SuperQuickModal(discord.ui.Modal, title='Schnell-Registrierung'):
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
+        # Extrahiere Realm und Name aus dem Link
         match = re.search(r'characters/eu/([^/]+)/([^/]+)', self.rio_link.value.lower())
         if not match: return await interaction.followup.send("❌ Ungültiger Link!", ephemeral=True)
         
@@ -128,7 +129,15 @@ class SuperQuickModal(discord.ui.Modal, title='Schnell-Registrierung'):
                 if resp.status != 200: return await interaction.followup.send("❌ Charakter nicht gefunden!", ephemeral=True)
                 data = await resp.json()
 
-        char_name, char_class = data['name'], data['class']
+        char_name = data['name']
+        char_class = data['class']
+        char_spec = data.get('active_spec_name', 'Unbekannt')
+        char_realm = data['realm']
+        
+        # Warcraftlogs Link generieren
+        # Format: https://www.warcraftlogs.com/character/eu/realm/name
+        wcl_link = f"https://www.warcraftlogs.com/character/eu/{srv}/{name}"
+
         raw_input = self.discord_search.value.strip()
         user_id = raw_input.replace("<@", "").replace("!", "").replace(">", "").replace("&", "")
         member = interaction.guild.get_member(int(user_id)) if user_id.isdigit() else discord.utils.get(interaction.guild.members, display_name=raw_input)
@@ -137,7 +146,14 @@ class SuperQuickModal(discord.ui.Modal, title='Schnell-Registrierung'):
         if forum_channel:
             res = await forum_channel.create_thread(
                 name=f"[{char_class}] {char_name} | {self.real_name.value}",
-                content=f"### 🛡️ Neuer Eintrag: {char_name}\n**Klasse:** {char_class}\n[Raider.io]({self.rio_link.value})"
+                content=(
+                    f"### 🛡️ Neuer Eintrag: {char_name}\n"
+                    f"**Klasse/Spec:** {char_class} ({char_spec})\n"
+                    f"**Spieler:** {self.real_name.value}\n"
+                    f"**Server:** {char_realm}\n\n"
+                    f"🔗 [Raider.io Profile]({self.rio_link.value})\n"
+                    f"📊 [Warcraftlogs Profile]({wcl_link})"
+                )
             )
             if member:
                 await res.thread.send("💡 Entscheidung treffen:", view=ThreadActionView(member.id))
@@ -149,7 +165,7 @@ class SuperQuickModal(discord.ui.Modal, title='Schnell-Registrierung'):
                     if c_role: await member.add_roles(c_role)
                     if b_role: await member.add_roles(b_role)
                 except: pass
-        await interaction.followup.send(f"✅ Eintrag für **{char_name}** erstellt!", ephemeral=True)
+        await interaction.followup.send(f"✅ Eintrag für **{char_name}** ({char_spec}) erstellt!", ephemeral=True)
 
 # --- 3. BOT HAUPTKLASSE ---
 class GildenLeitungView(discord.ui.View):
