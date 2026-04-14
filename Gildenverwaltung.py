@@ -8,14 +8,13 @@ import aiohttp
 from datetime import datetime, timedelta
 
 # --- KONFIGURATION ---
-# IDs als Umgebungsvariablen oder hier direkt eintragen
+# Trage hier deine IDs ein oder nutze Umgebungsvariablen
 OFFIZIER_ROLLE_ID = int(os.getenv('OFFIZIER_ROLLE_ID') or 0)
 FORUM_CHANNEL_ID = int(os.getenv('FORUM_CHANNEL_ID') or 0)
 MITGLIED_ROLLE_ID = int(os.getenv('MITGLIED_ROLLE_ID') or 0)
 BEWERBER_ROLLE_ID = int(os.getenv('BEWERBER_ROLLE_ID') or 0)
-GAST_ROLLE_ID = int(os.getenv('GAST_ROLLE_ID') or 0)
 
-# WoW Klassenfarben (Hex-Codes)
+# WoW Klassenfarben für die Embeds
 CLASS_COLORS = {
     "Death Knight": 0xC41E3A, "Demon Hunter": 0xA330C9, "Druid": 0xFF7C0A,
     "Evoker": 0x33937F, "Hunter": 0xAAD372, "Mage": 0x3FC7EB,
@@ -25,7 +24,7 @@ CLASS_COLORS = {
 }
 
 def get_raid_week_dates():
-    """Berechnet den Zeitraum von Donnerstag (Raid-Start) bis nächsten Mittwoch."""
+    """Berechnet den Zeitraum von Donnerstag bis nächsten Mittwoch."""
     now = datetime.now()
     # Finde den letzten Donnerstag (Wochentag 3)
     days_since_thursday = (now.weekday() - 3) % 7
@@ -33,19 +32,18 @@ def get_raid_week_dates():
     next_wednesday = last_thursday + timedelta(days=6)
     return last_thursday.strftime("%d.%m."), next_wednesday.strftime("%d.%m.")
 
-# --- 1. RAID UMFRAGE LOGIK (START DONNERSTAG) ---
+# --- RAID UMFRAGE KOMPONENTE ---
 class RaidPollView(discord.ui.View):
     def __init__(self, week_range):
         super().__init__(timeout=None)
         self.week_range = week_range
-        # Sortierung ab Donnerstag nach Weekly Reset
         self.days_order = ["Donnerstag", "Freitag", "Samstag", "Sonntag", "Montag", "Dienstag", "Mittwoch"]
         self.votes = {day: [] for day in self.days_order}
 
     async def update_poll_embed(self, interaction: discord.Interaction):
         embed = discord.Embed(
             title=f"⚔️ Raid-Umfrage ({self.week_range})",
-            description="Markiert alle Tage, an denen ihr Zeit habt!",
+            description="Wann habt ihr Zeit? (Start ab Donnerstag nach Reset)",
             color=discord.Color.blue()
         )
         for day in self.days_order:
@@ -63,28 +61,28 @@ class RaidPollView(discord.ui.View):
             self.votes[day].append(user_id)
         await self.update_poll_embed(interaction)
 
-    @discord.ui.button(label="Do", style=discord.ButtonStyle.gray, custom_id="p_do")
+    @discord.ui.button(label="Do", style=discord.ButtonStyle.gray, custom_id="poll_do")
     async def v_do(self, i, b): await self.handle_vote(i, "Donnerstag")
-    @discord.ui.button(label="Fr", style=discord.ButtonStyle.gray, custom_id="p_fr")
+    @discord.ui.button(label="Fr", style=discord.ButtonStyle.gray, custom_id="poll_fr")
     async def v_fr(self, i, b): await self.handle_vote(i, "Freitag")
-    @discord.ui.button(label="Sa", style=discord.ButtonStyle.gray, custom_id="p_sa")
+    @discord.ui.button(label="Sa", style=discord.ButtonStyle.gray, custom_id="poll_sa")
     async def v_sa(self, i, b): await self.handle_vote(i, "Samstag")
-    @discord.ui.button(label="So", style=discord.ButtonStyle.gray, custom_id="p_so")
+    @discord.ui.button(label="So", style=discord.ButtonStyle.gray, custom_id="poll_so")
     async def v_so(self, i, b): await self.handle_vote(i, "Sonntag")
-    @discord.ui.button(label="Mo", style=discord.ButtonStyle.gray, custom_id="p_mo")
+    @discord.ui.button(label="Mo", style=discord.ButtonStyle.gray, custom_id="poll_mo")
     async def v_mo(self, i, b): await self.handle_vote(i, "Montag")
-    @discord.ui.button(label="Di", style=discord.ButtonStyle.gray, custom_id="p_di")
+    @discord.ui.button(label="Di", style=discord.ButtonStyle.gray, custom_id="poll_di")
     async def v_di(self, i, b): await self.handle_vote(i, "Dienstag")
-    @discord.ui.button(label="Mi", style=discord.ButtonStyle.gray, custom_id="p_mi")
+    @discord.ui.button(label="Mi", style=discord.ButtonStyle.gray, custom_id="poll_mi")
     async def v_mi(self, i, b): await self.handle_vote(i, "Mittwoch")
 
-# --- 2. REGISTRIERUNG MIT SPEC, LOGS & EINTRITTSDATUM ---
+# --- REGISTRIERUNG & FORUM ---
 class ThreadActionView(discord.ui.View):
     def __init__(self, member_id):
         super().__init__(timeout=None)
         self.member_id = member_id
 
-    @discord.ui.button(label="Annehmen", style=discord.ButtonStyle.success, custom_id="acc_btn")
+    @discord.ui.button(label="Annehmen", style=discord.ButtonStyle.success, custom_id="accept_member")
     async def accept(self, interaction: discord.Interaction, button: discord.ui.Button):
         member = interaction.guild.get_member(self.member_id)
         if member:
@@ -93,69 +91,66 @@ class ThreadActionView(discord.ui.View):
             try:
                 if m_role: await member.add_roles(m_role)
                 if b_role: await member.remove_roles(b_role)
-                await interaction.response.send_message(f"✅ {member.mention} aufgenommen!")
-                await asyncio.sleep(3); await interaction.channel.delete()
-            except: await interaction.response.send_message("Rollenfehler!", ephemeral=True)
+                await interaction.response.send_message(f"✅ {member.mention} ist jetzt Mitglied!")
+                await asyncio.sleep(3)
+                await interaction.channel.delete()
+            except:
+                await interaction.response.send_message("Fehler bei der Rollenzuweisung.", ephemeral=True)
 
-class SuperQuickModal(discord.ui.Modal, title='Schnell-Registrierung'):
-    rio_link = discord.ui.TextInput(label='Raider.io Link', placeholder='https://raider.io/characters/eu/...', required=True)
-    discord_search = discord.ui.TextInput(label='Discord User', placeholder='Name oder ID', required=True)
-    real_name = discord.ui.TextInput(label='Vorname', placeholder='z.B. Alex', required=True)
+class RegistrationModal(discord.ui.Modal, title='Mitglied Registrierung'):
+    rio_link = discord.ui.TextInput(label='Raider.io Link', required=True)
+    discord_user = discord.ui.TextInput(label='Discord User (ID oder Name)', required=True)
+    real_name = discord.ui.TextInput(label='Vorname', required=True)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        match = re.search(r'characters/eu/([^/]+)/([^/]+)', self.rio_link.value.lower())
-        if not match: return await interaction.followup.send("❌ Link-Format ungültig!", ephemeral=True)
         
-        srv, name = match.group(1), match.group(2)
+        # Regex für Realm und Name aus Rio Link
+        match = re.search(r'characters/eu/([^/]+)/([^/]+)', self.rio_link.value.lower())
+        if not match:
+            return await interaction.followup.send("❌ Ungültiger Link!", ephemeral=True)
+        
+        realm, name = match.group(1), match.group(2)
         async with aiohttp.ClientSession() as session:
-            async with session.get(f"https://raider.io/api/v1/characters/profile?region=eu&realm={srv}&name={name}&fields=gear") as resp:
-                if resp.status != 200: return await interaction.followup.send("❌ Charakter nicht gefunden!", ephemeral=True)
+            async with session.get(f"https://raider.io/api/v1/characters/profile?region=eu&realm={realm}&name={name}&fields=gear") as resp:
+                if resp.status != 200:
+                    return await interaction.followup.send("❌ Charakter nicht gefunden!", ephemeral=True)
                 data = await resp.json()
 
-        char_name, char_class = data['name'], data['class']
+        char_name = data['name']
+        char_class = data['class']
         char_spec = data.get('active_spec_name', 'Unbekannt')
         char_ilvl = data.get('gear', {}).get('item_level_equipped', 0)
-        char_realm = data['realm']
         join_date = datetime.now().strftime("%d.%m.%Y")
-        wcl_link = f"https://www.warcraftlogs.com/character/eu/{srv}/{name}"
+        wcl_link = f"https://www.warcraftlogs.com/character/eu/{realm}/{name}"
 
-        # Discord User auflösen
-        raw_input = self.discord_search.value.strip()
-        user_id = raw_input.replace("<@", "").replace("!", "").replace(">", "").replace("&", "")
-        member = interaction.guild.get_member(int(user_id)) if user_id.isdigit() else discord.utils.get(interaction.guild.members, display_name=raw_input)
+        # User finden
+        raw_id = self.discord_user.value.replace("<@", "").replace("!", "").replace(">", "").replace("&", "")
+        member = interaction.guild.get_member(int(raw_id)) if raw_id.isdigit() else None
 
-        forum_channel = interaction.guild.get_channel(FORUM_CHANNEL_ID)
-        if forum_channel:
+        forum = interaction.guild.get_channel(FORUM_CHANNEL_ID)
+        if forum:
             color = CLASS_COLORS.get(char_class, 0x3498db)
-            embed = discord.Embed(title=f"Neuer Eintrag: {char_name}", color=color)
+            embed = discord.Embed(title=f"Neuzugang: {char_name}", color=color)
             embed.add_field(name="Klasse / Spec", value=f"{char_class} ({char_spec})", inline=True)
             embed.add_field(name="Item-Level", value=str(char_ilvl), inline=True)
-            embed.add_field(name="Spieler / Vorname", value=f"{member.mention if member else 'Unbekannt'} / {self.real_name.value}", inline=False)
-            embed.add_field(name="Server / Eintritt", value=f"{char_realm} / {join_date}", inline=False)
-            embed.add_field(name="Links", value=f"🔗 [Raider.io]({self.rio_link.value}) | 📊 [Warcraftlogs]({wcl_link})", inline=False)
+            embed.add_field(name="Spieler", value=f"{member.mention if member else 'Unbekannt'} / {self.real_name.value}", inline=False)
+            embed.add_field(name="Eintritt", value=join_date, inline=True)
+            embed.add_field(name="Links", value=f"🔗 [Rio]({self.rio_link.value}) | 📊 [Logs]({wcl_link})", inline=False)
 
-            res = await forum_channel.create_thread(name=f"[{char_class}] {char_name} | {self.real_name.value}", embed=embed)
+            thread = await forum.create_thread(name=f"[{char_class}] {char_name} | {self.real_name.value}", embed=embed)
             if member:
-                await res.thread.send("💡 Aktion wählen:", view=ThreadActionView(member.id))
+                await thread.thread.send("💡 Offiziers-Aktion:", view=ThreadActionView(member.id))
                 try:
                     await member.edit(nick=f"{char_name} | {self.real_name.value}")
+                    # Optionale Klassenrolle zuweisen
                     c_role = discord.utils.get(interaction.guild.roles, name=char_class)
-                    b_role = interaction.guild.get_role(BEWERBER_ROLLE_ID)
                     if c_role: await member.add_roles(c_role)
-                    if b_role: await member.add_roles(b_role)
                 except: pass
-        await interaction.followup.send(f"✅ Registriert: **{char_name}** ({char_spec})", ephemeral=True)
+        
+        await interaction.followup.send(f"✅ Eintrag für {char_name} erstellt!", ephemeral=True)
 
-# --- 3. HAUPT PANEL & BOT SETUP ---
-class GildenLeitungView(discord.ui.View):
-    def __init__(self): super().__init__(timeout=None)
-    @discord.ui.button(label="Mitglied eintragen", style=discord.ButtonStyle.green, custom_id="main_add_btn")
-    async def add(self, interaction: discord.Interaction, b):
-        if any(r.id == OFFIZIER_ROLLE_ID for r in interaction.user.roles):
-            await interaction.response.send_modal(SuperQuickModal())
-        else: await interaction.response.send_message("Keine Rechte!", ephemeral=True)
-
+# --- BOT HAUPTKLASSE ---
 class GildenBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
@@ -164,67 +159,74 @@ class GildenBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
     
     async def setup_hook(self):
+        # Statische Views registrieren
         self.add_view(GildenLeitungView())
         start, end = get_raid_week_dates()
         self.add_view(RaidPollView(f"{start} - {end}"))
+        # Slash Commands synchronisieren
+        await self.tree.sync()
+
+class GildenLeitungView(discord.ui.View):
+    def __init__(self): super().__init__(timeout=None)
+    @discord.ui.button(label="Mitglied eintragen", style=discord.ButtonStyle.green, custom_id="btn_register")
+    async def register(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if any(r.id == OFFIZIER_ROLLE_ID for r in interaction.user.roles):
+            await interaction.response.send_modal(RegistrationModal())
+        else:
+            await interaction.response.send_message("Nur für Offiziere!", ephemeral=True)
 
 bot = GildenBot()
 
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def setup(ctx):
-    await ctx.send("### 🏰 Gildenverwaltung", view=GildenLeitungView())
+    """Initiales Setup des Gilden-Panels"""
+    await ctx.send("### 🏰 Gilden-Management Zentrale", view=GildenLeitungView())
 
-@bot.command(name="raidumfrage")
+@bot.command()
 async def raidumfrage(ctx):
+    """Erstellt eine neue Raid-Umfrage"""
     if not any(r.id == OFFIZIER_ROLLE_ID for r in ctx.author.roles):
-        return await ctx.send("❌ Nur für Offiziere.")
+        return await ctx.send("❌ Keine Berechtigung.")
     start, end = get_raid_week_dates()
     view = RaidPollView(f"{start} - {end}")
     embed = discord.Embed(title=f"⚔️ Raid-Umfrage ({start} - {end})", color=discord.Color.blue())
-    # Liste im Embed ab Donnerstag
     for d in ["Donnerstag", "Freitag", "Samstag", "Sonntag", "Montag", "Dienstag", "Mittwoch"]:
         embed.add_field(name=f"{d} (0)", value="Keine Stimmen", inline=False)
     await ctx.send(embed=embed, view=view)
-    @bot.tree.command(name="update_entry", description="Aktualisiert einen bestehenden Eintrag mit Farbe und neuen Daten")
+
+# --- SLASH COMMAND FÜR BEREITS ERSTELLTE EINTRÄGE ---
+@bot.tree.command(name="update_entry", description="Aktualisiert einen Thread mit der richtigen Klassenfarbe")
 @app_commands.describe(rio_link="Der Raider.io Link des Charakters")
 async def update_entry(interaction: discord.Interaction, rio_link: str):
     if not any(r.id == OFFIZIER_ROLLE_ID for r in interaction.user.roles):
         return await interaction.response.send_message("❌ Keine Rechte!", ephemeral=True)
 
     await interaction.response.defer(ephemeral=True)
-    
-    # Daten von Raider.io holen (wie im Registrierungs-Modal)
     match = re.search(r'characters/eu/([^/]+)/([^/]+)', rio_link.lower())
-    if not match: 
+    if not match:
         return await interaction.followup.send("❌ Link-Format ungültig!", ephemeral=True)
     
-    srv, name = match.group(1), match.group(2)
     async with aiohttp.ClientSession() as session:
-        async with session.get(f"https://raider.io/api/v1/characters/profile?region=eu&realm={srv}&name={name}&fields=gear") as resp:
-            if resp.status != 200: 
+        async with session.get(f"https://raider.io/api/v1/characters/profile?region=eu&realm={match.group(1)}&name={match.group(2)}&fields=gear") as resp:
+            if resp.status != 200:
                 return await interaction.followup.send("❌ Charakter nicht gefunden!", ephemeral=True)
             data = await resp.json()
 
-    char_name = data['name']
     char_class = data['class']
-    char_spec = data.get('active_spec_name', 'Unbekannt')
-    char_ilvl = data.get('gear', {}).get('item_level_equipped', 0)
     color = CLASS_COLORS.get(char_class, 0x3498db)
-
-    # Neues Embed erstellen
-    embed = discord.Embed(title=f"Aktualisierter Eintrag: {char_name}", color=color)
-    embed.add_field(name="Klasse / Spec", value=f"{char_class} ({char_spec})", inline=True)
-    embed.add_field(name="Item-Level", value=str(char_ilvl), inline=True)
-    embed.add_field(name="Links", value=f"🔗 [Raider.io]({rio_link})", inline=False)
     
-    # Der Bot sucht die erste Nachricht im aktuellen Thread und bearbeitet sie
+    embed = discord.Embed(title=f"Aktualisierter Eintrag: {data['name']}", color=color)
+    embed.add_field(name="Klasse / Spec", value=f"{char_class} ({data.get('active_spec_name', '??')})", inline=True)
+    embed.add_field(name="Item-Level", value=str(data.get('gear', {}).get('item_level_equipped', 0)), inline=True)
+    embed.add_field(name="Link", value=f"🔗 [Rio]({rio_link})", inline=False)
+
     if isinstance(interaction.channel, discord.Thread):
         async for message in interaction.channel.history(oldest_first=True, limit=1):
             await message.edit(embed=embed)
-            await interaction.followup.send("✅ Thread-Farbe und Daten wurden aktualisiert!", ephemeral=True)
+            await interaction.followup.send("✅ Eintrag wurde gefärbt und aktualisiert!", ephemeral=True)
             return
     
-    await interaction.followup.send("❌ Du musst diesen Befehl innerhalb des Threads ausführen, den du aktualisieren willst!", ephemeral=True)
+    await interaction.followup.send("❌ Bitte führe den Befehl direkt im Forum-Thread aus!", ephemeral=True)
 
 bot.run(os.getenv('DISCORD_TOKEN') or 'DEIN_TOKEN_HIER')
