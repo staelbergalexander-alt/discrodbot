@@ -134,8 +134,10 @@ class SuperQuickModal(discord.ui.Modal, title='Schnell-Registrierung'):
         char_spec = data.get('active_spec_name', 'Unbekannt')
         char_realm = data['realm']
         
+        # Aktuelles Datum als Eintrittsdatum
+        join_date = datetime.now().strftime("%d.%m.%Y")
+        
         # Warcraftlogs Link generieren
-        # Format: https://www.warcraftlogs.com/character/eu/realm/name
         wcl_link = f"https://www.warcraftlogs.com/character/eu/{srv}/{name}"
 
         raw_input = self.discord_search.value.strip()
@@ -150,7 +152,8 @@ class SuperQuickModal(discord.ui.Modal, title='Schnell-Registrierung'):
                     f"### 🛡️ Neuer Eintrag: {char_name}\n"
                     f"**Klasse/Spec:** {char_class} ({char_spec})\n"
                     f"**Spieler:** {self.real_name.value}\n"
-                    f"**Server:** {char_realm}\n\n"
+                    f"**Server:** {char_realm}\n"
+                    f"**Eintrittsdatum:** {join_date}\n\n"
                     f"🔗 [Raider.io Profile]({self.rio_link.value})\n"
                     f"📊 [Warcraftlogs Profile]({wcl_link})"
                 )
@@ -165,7 +168,7 @@ class SuperQuickModal(discord.ui.Modal, title='Schnell-Registrierung'):
                     if c_role: await member.add_roles(c_role)
                     if b_role: await member.add_roles(b_role)
                 except: pass
-        await interaction.followup.send(f"✅ Eintrag für **{char_name}** ({char_spec}) erstellt!", ephemeral=True)
+        await interaction.followup.send(f"✅ Eintrag für **{char_name}** ({char_spec}) am {join_date} erstellt!", ephemeral=True)
 
 # --- 3. BOT HAUPTKLASSE ---
 class GildenLeitungView(discord.ui.View):
@@ -186,9 +189,6 @@ class GildenBot(commands.Bot):
     async def setup_hook(self):
         # Registriert Views, damit Buttons nach Neustart funktionieren
         self.add_view(GildenLeitungView())
-        # Hinweis: Bei Neustart wird die View ohne spezifisches Datum geladen,
-        # da die Daten in der aktiven Instanz leben. Für persistente Speicherung
-        # der Stimmen wäre eine Datenbank nötig.
         start, end = get_raid_week_dates()
         self.add_view(RaidPollView(f"{start} - {end}"))
 
