@@ -13,7 +13,7 @@ REGION = "eu"
 
 WOW_DATA = {
     "Death Knight": ["Blood", "Frost", "Unholy"],
-    "Demon Hunter": ["Havoc", "Vengeance"],
+    "Demon Hunter": ["Havoc", "Vengeance", "Devourer"],
     "Druid": ["Balance", "Feral", "Guardian", "Restoration"],
     "Evoker": ["Devastation", "Preservation", "Augmentation"],
     "Hunter": ["Beast Mastery", "Marksmanship", "Survival"],
@@ -85,7 +85,7 @@ class MemberInfoModal(discord.ui.Modal, title='Mitglied Details'):
         status_update = ""
         if member:
             # Nickname ändern: "Charname (Vorname)"
-            new_nick = f"{self.ingame_name.value} ({self.real_name.value})"
+            new_nick = f"{self.ingame_name.value} | {self.real_name.value}"
             try:
                 await member.edit(nick=new_nick)
                 status_update += f"✅ Nickname zu `{new_nick}` geändert.\n"
