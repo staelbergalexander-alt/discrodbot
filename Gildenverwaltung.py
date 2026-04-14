@@ -6,8 +6,8 @@ import os
 import asyncio
 
 # --- KONFIGURATION (Sicherer Abruf über Umgebungsvariablen) ---
-OFFIZIER_ROLLE_ID = int(os.getenv('OFFIZIER_ROLLE_ID') or 1234567890)
-FORUM_CHANNEL_ID = int(os.getenv('FORUM_CHANNEL_ID') or 9876543210)
+OFFIZIER_ROLLE_ID = int(os.getenv('OFFIZIER_ROLLE_ID') or 1480564049191370763)
+FORUM_CHANNEL_ID = int(os.getenv('FORUM_CHANNEL_ID') or 1492325655101313074)
 DEFAULT_SERVER_NAME = os.getenv('DEFAULT_SERVER') or "Blackhand"
 REGION = "eu"
 
