@@ -9,6 +9,7 @@ import asyncio
 OFFIZIER_ROLLE_ID = int(os.getenv('OFFIZIER_ROLLE_ID'))
 FORUM_CHANNEL_ID = int(os.getenv('FORUM_CHANNEL_ID'))
 MITGLIED_ROLLE_ID = int(os.getenv('MITGLIED_ROLLE_ID'))
+BEWERBER_ROLLE_ID
 DEFAULT_SERVER_NAME = os.getenv('DEFAULT_SERVER') or "Blackhand"
 REGION = "eu"
 
@@ -27,50 +28,85 @@ WOW_DATA = {
     "Warlock": ["Affliction", "Demonology", "Destruction"],
     "Warrior": ["Arms", "Fury", "Protection"]
 }
+Am besten ist es, wenn wir die gesamte Logik noch einmal sauber in den kompletten Code gießen. So verhinderst du, dass durch das manuelle Einfügen an den falschen Stellen Fehlermeldungen entstehen.
+
+Ich habe alle wichtigen Rollen-IDs jetzt ganz oben unter KONFIGURATION gesammelt, damit du sie auf einen Blick ändern kannst.
+
+Der vollständige Code (mit Bewerber-Logik)
+Python
+import discord
+from discord import app_commands
+from discord.ext import commands
+from datetime import datetime
+import os
+import asyncio
+
+# --- KONFIGURATION (Trage hier deine IDs ein) ---
+OFFIZIER_ROLLE_ID = 123456789012345678  # Wer darf den Bot bedienen?
+FORUM_CHANNEL_ID = 987654321098765432   # Wo kommen die Threads rein?
+MITGLIED_ROLLE_ID = 111222333444555666  # Die finale Gilden-Rolle
+BEWERBER_ROLLE_ID = 999888777666555444  # Die temporäre Bewerber-Rolle
+DEFAULT_SERVER_NAME = "Blackhand"
+REGION = "eu"
+
+WOW_DATA = {
+    "Death Knight": ["Blood", "Frost", "Unholy"],
+    "Demon Hunter": ["Havoc", "Vengeance"],
+    "Druid": ["Balance", "Feral", "Guardian", "Restoration"],
+    "Evoker": ["Devastation", "Preservation", "Augmentation"],
+    "Hunter": ["Beast Mastery", "Marksmanship", "Survival"],
+    "Mage": ["Arcane", "Fire", "Frost"],
+    "Monk": ["Brewmaster", "Mistweaver", "Windwalker"],
+    "Paladin": ["Holy", "Protection", "Retribution"],
+    "Priest": ["Discipline", "Holy", "Shadow"],
+    "Rogue": ["Assassination", "Outlaw", "Subtlety"],
+    "Shaman": ["Elemental", "Enhancement", "Restoration"],
+    "Warlock": ["Affliction", "Demonology", "Destruction"],
+    "Warrior": ["Arms", "Fury", "Protection"]
+}
+
 # --- MODAL FÜR ABLEHNUNG ---
 class RejectModal(discord.ui.Modal, title='Ablehnung begründen'):
-    reason = discord.ui.TextInput(
-        label='Grund für die Ablehnung', 
-        style=discord.TextStyle.paragraph, 
-        placeholder='Gear reicht nicht, Klasse voll, etc...',
-        required=True
-    )
+    reason = discord.ui.TextInput(label='Grund', style=discord.TextStyle.paragraph, required=True)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.send_message(f"❌ **Abgelehnt.**\n**Begründung:** {self.reason.value}")
-        # Thread sperren und archivieren
         await interaction.channel.edit(locked=True, archived=True)
 
 # --- VIEW FÜR BUTTONS IM THREAD ---
 class ThreadActionView(discord.ui.View):
-    def __init__(self, member_id, char_class):
+    def __init__(self, member_id):
         super().__init__(timeout=None)
         self.member_id = member_id
-        self.char_class = char_class
 
     @discord.ui.button(label="Annehmen", style=discord.ButtonStyle.success, custom_id="accept_btn")
     async def accept(self, interaction: discord.Interaction, button: discord.ui.Button):
         member = interaction.guild.get_member(self.member_id)
         if member:
-            role = interaction.guild.get_role(MITGLIED_ROLLE_ID)
-            if role:
-                try:
-                    await member.add_roles(role)
-                    await interaction.response.send_message(f"✅ {member.mention} wurde aufgenommen! Thread wird gelöscht...")
-                    await asyncio.sleep(5)
-                    await interaction.channel.delete()
-                except discord.Forbidden:
-                    await interaction.response.send_message("❌ Fehler: Bot hat keine Rechte Rollen zu geben.", ephemeral=True)
-            else:
-                await interaction.response.send_message("❌ Fehler: Mitglied-Rolle nicht gefunden.", ephemeral=True)
+            m_role = interaction.guild.get_role(MITGLIED_ROLLE_ID)
+            b_role = interaction.guild.get_role(BEWERBER_ROLLE_ID)
+            try:
+                if m_role: await member.add_roles(m_role)
+                if b_role: await member.remove_roles(b_role) # Bewerber-Rolle entfernen
+                await interaction.response.send_message(f"✅ {member.mention} aufgenommen! Bewerber-Status entfernt.")
+                await asyncio.sleep(5)
+                await interaction.channel.delete()
+            except:
+                await interaction.response.send_message("❌ Fehler bei Rollenvergabe.", ephemeral=True)
         else:
-            await interaction.response.send_message("⚠️ User nicht mehr auf dem Server.", ephemeral=True)
+            await interaction.response.send_message("⚠️ User nicht gefunden.", ephemeral=True)
 
     @discord.ui.button(label="Ablehnen", style=discord.ButtonStyle.danger, custom_id="reject_btn")
     async def reject(self, interaction: discord.Interaction, button: discord.ui.Button):
+        member = interaction.guild.get_member(self.member_id)
+        if member:
+            b_role = interaction.guild.get_role(BEWERBER_ROLLE_ID)
+            if b_role: 
+                try: await member.remove_roles(b_role) # Bewerber-Rolle auch bei Ablehnung weg
+                except: pass
         await interaction.response.send_modal(RejectModal())
 
-# --- MODAL FÜR MITGLIEDER-REGISTRIERUNG ---
+# --- HAUPT-MODAL (DATEN-EINGABE) ---
 class MemberInfoModal(discord.ui.Modal, title='Mitglied Details'):
     def __init__(self, char_class, char_spec):
         super().__init__()
@@ -78,7 +114,7 @@ class MemberInfoModal(discord.ui.Modal, title='Mitglied Details'):
         self.char_spec = char_spec
 
     discord_search = discord.ui.TextInput(label='Discord User (Name oder ID)')
-    ingame_name = discord.ui.TextInput(label='Ingame Charakter Name', placeholder='z.B. Bolontíku')
+    ingame_name = discord.ui.TextInput(label='Ingame Charakter Name')
     real_name = discord.ui.TextInput(label='Vorname')
     server_name = discord.ui.TextInput(label='Server', default=DEFAULT_SERVER_NAME)
 
@@ -87,54 +123,40 @@ class MemberInfoModal(discord.ui.Modal, title='Mitglied Details'):
         raw_input = self.discord_search.value.strip()
         user_id_str = raw_input.replace("<@", "").replace("!", "").replace(">", "").replace("&", "")
         member = None
-        if user_id_str.isdigit():
-            member = interaction.guild.get_member(int(user_id_str))
-        if not member:
-            member = discord.utils.get(interaction.guild.members, display_name=raw_input)
-        if not member:
-            member = discord.utils.get(interaction.guild.members, name=raw_input)
+        if user_id_str.isdigit(): member = interaction.guild.get_member(int(user_id_str))
+        if not member: member = discord.utils.get(interaction.guild.members, display_name=raw_input)
+        if not member: member = discord.utils.get(interaction.guild.members, name=raw_input)
 
-        # 2. Logs & Nickname Vorbereitung
+        # 2. Forum Thread erstellen
         srv_slug = self.server_name.value.replace(" ", "-").lower()
         log_url = f"https://www.warcraftlogs.com/character/{REGION}/{srv_slug}/{self.ingame_name.value.lower()}"
-        thread_name = f"[{self.char_class}] {self.ingame_name.value} ({self.char_spec}) {self.real_name.value}"
+        thread_name = f"[{self.char_class}] {self.ingame_name.value} ({self.char_spec})"
         
-        # 3. Forum Thread erstellen
         forum_channel = interaction.guild.get_channel(FORUM_CHANNEL_ID)
-        status_update = ""
-        
         if forum_channel:
-            # Thread erstellen
-            result = await forum_channel.create_thread(
+            res = await forum_channel.create_thread(
                 name=thread_name,
-                content=f"### 🛡️ Neuer Eintrag: {self.ingame_name.value}\n"
-                        f"**Klasse:** {self.char_class} ({self.char_spec})\n"
-                        f"**Vorname:** {self.real_name.value} | **Server:** {self.server_name.value}\n"
-                        f"📈 [Warcraft Logs Profil]({log_url})"
+                content=f"### 🛡️ Neuer Eintrag: {self.ingame_name.value}\n**Klasse:** {self.char_class} ({self.char_spec})\n**Spieler:** {self.real_name.value}\n📈 [Logs]({log_url})"
             )
             
-            # Buttons in den Thread posten (wenn User gefunden wurde)
+            # 3. Rollen & Nickname (Bewerber-Status setzen)
+            status = ""
             if member:
-                view = ThreadActionView(member_id=member.id, char_class=self.char_class)
-                await result.thread.send("💡 **Entscheidung treffen:**", view=view)
-
-                # Nickname & Klassen-Rolle sofort anpassen
+                view = ThreadActionView(member_id=member.id)
+                await res.thread.send("💡 **Entscheidung treffen:**", view=view)
                 try:
                     await member.edit(nick=f"{self.ingame_name.value} | {self.real_name.value}")
-                    class_role = discord.utils.get(interaction.guild.roles, name=self.char_class)
-                    if class_role:
-                        await member.add_roles(class_role)
-                    status_update = f"✅ Name & Klassen-Rolle für {member.mention} angepasst."
-                except:
-                    status_update = "⚠️ Nickname/Rolle konnte nicht automatisch geändert werden."
-            else:
-                status_update = "⚠️ Discord-User nicht gefunden (ID/Name prüfen)."
+                    c_role = discord.utils.get(interaction.guild.roles, name=self.char_class)
+                    b_role = interaction.guild.get_role(BEWERBER_ROLLE_ID)
+                    if c_role: await member.add_roles(c_role)
+                    if b_role: await member.add_roles(b_role) # Hier bekommt er die Bewerber-Rolle
+                    status = f"✅ Setup für {member.mention} abgeschlossen."
+                except: status = "⚠️ Rollen-Update fehlgeschlagen."
+            else: status = "⚠️ User nicht gefunden."
 
-            await interaction.response.send_message(f"✅ Post erstellt!\n{status_update}", ephemeral=True)
-        else:
-            await interaction.response.send_message("❌ Forum-Kanal nicht gefunden!", ephemeral=True)
+            await interaction.response.send_message(f"Eintrag erstellt!\n{status}", ephemeral=True)
 
-# --- KLASSEN/SPEC SELECTION ---
+# --- KLASSEN WAHL ---
 class SpecSelect(discord.ui.Select):
     def __init__(self, char_class):
         self.char_class = char_class
@@ -146,46 +168,35 @@ class SpecSelect(discord.ui.Select):
         await interaction.message.delete()
 
 class GildenLeitungView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-
+    def __init__(self): super().__init__(timeout=None)
     @discord.ui.button(label="Neues Mitglied eintragen", style=discord.ButtonStyle.green, custom_id="add_btn")
     async def add_member(self, interaction: discord.Interaction, button: discord.ui.Button):
         if any(role.id == OFFIZIER_ROLLE_ID for role in interaction.user.roles):
             view = discord.ui.View()
             options = [discord.SelectOption(label=cls) for cls in sorted(WOW_DATA.keys())]
             select = discord.ui.Select(placeholder="Klasse wählen...", options=options)
-            
             async def class_callback(inter: discord.Interaction):
-                spec_view = discord.ui.View()
-                spec_view.add_item(SpecSelect(select.values[0]))
-                await inter.response.send_message(f"Klasse: **{select.values[0]}**", view=spec_view)
-            
+                v = discord.ui.View(); v.add_item(SpecSelect(select.values[0]))
+                await inter.response.send_message(f"Klasse: {select.values[0]}", view=v)
             select.callback = class_callback
             view.add_item(select)
             await interaction.response.send_message("Wähle die Klasse:", view=view, ephemeral=True)
-        else:
-            await interaction.response.send_message("Keine Berechtigung!", ephemeral=True)
 
-# --- BOT SETUP ---
+# --- BOT START ---
 class GildenBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
         intents.message_content = True
         intents.members = True
         super().__init__(command_prefix="!", intents=intents)
-
-    async def setup_hook(self):
-        self.add_view(GildenLeitungView())
+    async def setup_hook(self): self.add_view(GildenLeitungView())
 
 bot = GildenBot()
-
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def setup(ctx):
     await ctx.channel.purge(limit=5, check=lambda m: m.author == bot.user)
-    await ctx.send("### 🏰 Gildenverwaltung\nMitglieder registrieren & verwalten.", view=GildenLeitungView())
+    await ctx.send("### 🏰 Gildenverwaltung", view=GildenLeitungView())
     await ctx.message.delete()
 
-TOKEN = os.getenv('DISCORD_TOKEN') or 'DEIN_TOKEN_HIER'
-bot.run(TOKEN)
+bot.run(os.getenv('DISCORD_TOKEN') or 'DEIN_TOKEN')
