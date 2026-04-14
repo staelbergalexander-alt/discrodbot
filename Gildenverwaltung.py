@@ -61,6 +61,26 @@ class RaidPollView(discord.ui.View):
 
 # --- REGISTRIERUNGS LOGIK ---
 
+# --- ABLEHNEN MODAL ---
+class RejectModal(discord.ui.Modal, title='Ablehnung begründen'):
+    reason = discord.ui.TextInput(label='Grund', style=discord.TextStyle.paragraph, required=True)
+    def __init__(self, member_id):
+        super().__init__()
+        self.member_id = member_id
+
+    async def on_submit(self, interaction: discord.Interaction):
+        member = interaction.guild.get_member(self.member_id)
+        if member:
+            b_role = interaction.guild.get_role(BEWERBER_ROLLE_ID)
+            g_role = interaction.guild.get_role(GAST_ROLLE_ID)
+            try:
+                if b_role: await member.remove_roles(b_role)
+                if g_role: await member.add_roles(g_role)
+            except: pass
+        await interaction.response.send_message(f"❌ Abgelehnt. Grund: {self.reason.value}")
+        await asyncio.sleep(3)
+        await interaction.channel.edit(locked=True, archived=True)
+
 class ThreadActionView(discord.ui.View):
     def __init__(self, member_id):
         super().__init__(timeout=None)
