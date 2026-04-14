@@ -5,8 +5,8 @@ from datetime import datetime
 import os
 
 # --- KONFIGURATION ---
-OFFIZIER_ROLLE_ID = 123456789012345678 
-FORUM_CHANNEL_ID = 987654321098765432 
+OFFIZIER_ROLLE_ID = 'OFFI_ROLE_ID'
+FORUM_CHANNEL_ID = 'FORUM_ID'
 DEFAULT_SERVER_NAME = "Blackhand" # Was standardmäßig im Feld stehen soll
 REGION = "eu"
 
