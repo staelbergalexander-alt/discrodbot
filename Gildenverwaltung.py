@@ -140,11 +140,15 @@ class SuperQuickModal(discord.ui.Modal, title='Schnell-Registrierung'):
             char_name = data['name']
             wcl_url = f"https://www.warcraftlogs.com/character/{REGION}/{srv}/{name}"
 
+            # Beitrittsdatum formatieren
+            join_date = target_member.joined_at.strftime("%d.%m.%Y")
+
             forum = interaction.guild.get_channel(FORUM_CHANNEL_ID)
             if forum:
                 res = await forum.create_thread(
                     name=f"[{char_class}] {char_name} | {self.real_name.value}",
                     content=f"### 🛡️ Neuer Eintrag: {char_name}\n"
+                            f"**Discord-Beitritt:** {join_date}\n\n" # <-- Hier ist das Datum
                             f"**Klasse:** {char_class}\n"
                             f"**Spieler:** {self.real_name.value}\n\n"
                             f"📈 **Profile:**\n"
