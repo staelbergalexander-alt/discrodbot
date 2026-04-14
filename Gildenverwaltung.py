@@ -147,23 +147,3 @@ async def setup(ctx):
     await ctx.send("### 🏰 Gildenverwaltung\nKlicke auf den Button, um ein Mitglied per Raider.io Link zu registrieren.", view=GildenLeitungView())
 
 bot.run(os.getenv('DISCORD_TOKEN') or 'DEIN_TOKEN')
-
-@bot.command(name="inv")
-async def inv(ctx):
-    if not any(role.id == OFFIZIER_ROLLE_ID for role in ctx.author.roles):
-        return await ctx.send("❌ Keine Rechte.")
-    target_role = ctx.guild.get_role(MITGLIED_ROLLE_ID)
-    if not target_role: return await ctx.send("❌ Rolle nicht gefunden.")
-    invite_list = []
-    for member in ctx.guild.members:
-        if target_role in member.roles:
-            name = member.display_name.split("|")[0].strip()
-            invite_list.append(f"/inv {name}")
-    if not invite_list: return await ctx.send("❌ Niemand gefunden.")
-    invite_list.sort()
-    full_text = "\n".join(invite_list)
-    header = f"### ⚔️ Ingame Invite-Liste ({len(invite_list)} Spieler)\n"
-    if len(full_text) > 1900:
-        await ctx.send(header)
-        for i in range(0, len(full_text), 1900):
-            await ctx.send(f"
