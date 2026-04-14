@@ -79,61 +79,69 @@ class ThreadActionView(discord.ui.View):
                 await asyncio.sleep(5); await interaction.channel.delete()
             except: await interaction.response.send_message("Rechte fehlen!", ephemeral=True)
 
-class UserPickerView(discord.ui.View):
-    """Dropdown zur Auswahl des Discord-Users"""
-    def __init__(self, rio_link, real_name):
-        super().__init__(timeout=180)
-        self.rio_link = rio_link
-        self.real_name = real_name
-
-    @discord.ui.select(cls=discord.ui.UserSelect, placeholder="Wähle den User aus...", min_values=1, max_values=1)
-    async def select_user(self, interaction: discord.Interaction, select: discord.ui.UserSelect):
-        target_member = select.values[0]
-        await interaction.response.defer(ephemeral=True)
-
-        # API Abfrage
-        match = re.search(r'characters/eu/([^/]+)/([^/]+)', self.rio_link.lower())
-        if not match: return await interaction.followup.send("❌ Link ungültig!", ephemeral=True)
-        
-        srv, name = match.group(1), match.group(2)
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"https://raider.io/api/v1/characters/profile?region=eu&realm={srv}&name={name}&fields=gear") as resp:
-                if resp.status != 200: return await interaction.followup.send("❌ Charakter nicht gefunden!", ephemeral=True)
-                data = await resp.json()
-
-        forum = interaction.guild.get_channel(FORUM_CHANNEL_ID)
-        if forum:
-            char_class = data['class']
-            char_name = data['name']
-            
-            # Thread erstellen
-            res = await forum.create_thread(
-                name=f"[{char_class}] {char_name} | {self.real_name}",
-                content=f"### 🛡️ Neuer Eintrag: {char_name}\n**Klasse:** {char_class}\n**Spieler:** {self.real_name}\n• [Rio]({self.rio_link})"
-            )
-            
-            # Rollen & Nickname
-            try:
-                await target_member.edit(nick=f"{char_name} | {self.real_name}")
-                c_role = discord.utils.get(interaction.guild.roles, name=char_class)
-                b_role = interaction.guild.get_role(BEWERBER_ROLLE_ID)
-                g_role = interaction.guild.get_role(GAST_ROLLE_ID)
-                if c_role: await target_member.add_roles(c_role)
-                if b_role: await target_member.add_roles(b_role)
-                if g_role: await target_member.remove_roles(g_role)
-                await res.thread.send(f"💡 Entscheidung für {target_member.mention}:", view=ThreadActionView(target_member.id))
-            except: pass
-
-        await interaction.followup.send(f"✅ Eintrag für {char_name} erstellt!", ephemeral=True)
-
 class SuperQuickModal(discord.ui.Modal, title='Schnell-Registrierung'):
     rio_link = discord.ui.TextInput(label='Raider.io Link', required=True)
     real_name = discord.ui.TextInput(label='Vorname des Spielers', required=True)
 
     async def on_submit(self, interaction: discord.Interaction):
-        # Zeige Dropdown nach Modal-Abschluss
-        view = UserPickerView(self.rio_link.value, self.real_name.value)
-        await interaction.response.send_message("Wähle jetzt den Discord-User aus:", view=view, ephemeral=True)
+        # 1. Aufforderung zum Pingen
+        prompt = await interaction.response.send_message(
+            f"✅ Daten empfangen! Bitte **erwähne (@Name)** jetzt den Discord-User oder schreibe seine ID in diesen Chat.",
+            ephemeral=True
+        )
+
+        def check(m):
+            return m.author == interaction.user and m.channel == interaction.channel
+
+        try:
+            # 2. Auf die Nachricht warten (Timeout nach 60 Sek)
+            msg = await interaction.client.wait_for('message', check=check, timeout=60.0)
+            raw_id = msg.content.replace("<@", "").replace("!", "").replace(">", "").replace("&", "")
+            
+            target_member = interaction.guild.get_member(int(raw_id)) if raw_id.isdigit() else None
+            
+            if not target_member:
+                return await interaction.followup.send("❌ User nicht gefunden. Vorgang abgebrochen.", ephemeral=True)
+
+            # 3. API Abfrage & Forum
+            await interaction.followup.send(f"⏳ Verarbeite {target_member.display_name}...", ephemeral=True)
+            
+            match = re.search(r'characters/eu/([^/]+)/([^/]+)', self.rio_link.value.lower())
+            if not match: return await interaction.followup.send("❌ Link ungültig!", ephemeral=True)
+            
+            srv, name = match.group(1), match.group(2)
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"https://raider.io/api/v1/characters/profile?region=eu&realm={srv}&name={name}&fields=gear") as resp:
+                    if resp.status != 200: return await interaction.followup.send("❌ Charakter nicht gefunden!", ephemeral=True)
+                    data = await resp.json()
+
+            forum = interaction.guild.get_channel(FORUM_CHANNEL_ID)
+            if forum:
+                char_class = data['class']
+                char_name = data['name']
+                res = await forum.create_thread(
+                    name=f"[{char_class}] {char_name} | {self.real_name.value}",
+                    content=f"### 🛡️ Neuer Eintrag: {char_name}\n**Klasse:** {char_class}\n**Spieler:** {self.real_name.value}\n• [Rio]({self.rio_link.value})"
+                )
+                
+                try:
+                    await target_member.edit(nick=f"{char_name} | {self.real_name.value}")
+                    c_role = discord.utils.get(interaction.guild.roles, name=char_class)
+                    b_role, g_role = interaction.guild.get_role(BEWERBER_ROLLE_ID), interaction.guild.get_role(GAST_ROLLE_ID)
+                    if c_role: await target_member.add_roles(c_role)
+                    if b_role: await target_member.add_roles(b_role)
+                    if g_role: await target_member.remove_roles(g_role)
+                    await res.thread.send(f"💡 Entscheidung für {target_member.mention}:", view=ThreadActionView(target_member.id))
+                except: pass
+                
+                # Ping-Nachricht zur Sauberkeit löschen
+                try: await msg.delete() 
+                except: pass
+
+            await interaction.followup.send(f"✅ Eintrag für {char_name} erfolgreich erstellt!", ephemeral=True)
+
+        except asyncio.TimeoutError:
+            await interaction.followup.send("❌ Zeit abgelaufen (60s). Bitte versuch es erneut.", ephemeral=True)
 
 # --- BOT SETUP ---
 
