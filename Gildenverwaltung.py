@@ -9,7 +9,7 @@ import asyncio
 OFFIZIER_ROLLE_ID = int(os.getenv('OFFIZIER_ROLLE_ID'))
 FORUM_CHANNEL_ID = int(os.getenv('FORUM_CHANNEL_ID'))
 MITGLIED_ROLLE_ID = int(os.getenv('MITGLIED_ROLLE_ID'))
-BEWERBER_ROLLE_ID
+BEWERBER_ROLLE_ID = int(os.getenv('BEWERBER_ROLLE_ID'))
 DEFAULT_SERVER_NAME = os.getenv('DEFAULT_SERVER') or "Blackhand"
 REGION = "eu"
 
@@ -28,43 +28,6 @@ WOW_DATA = {
     "Warlock": ["Affliction", "Demonology", "Destruction"],
     "Warrior": ["Arms", "Fury", "Protection"]
 }
-Am besten ist es, wenn wir die gesamte Logik noch einmal sauber in den kompletten Code gießen. So verhinderst du, dass durch das manuelle Einfügen an den falschen Stellen Fehlermeldungen entstehen.
-
-Ich habe alle wichtigen Rollen-IDs jetzt ganz oben unter KONFIGURATION gesammelt, damit du sie auf einen Blick ändern kannst.
-
-Der vollständige Code (mit Bewerber-Logik)
-Python
-import discord
-from discord import app_commands
-from discord.ext import commands
-from datetime import datetime
-import os
-import asyncio
-
-# --- KONFIGURATION (Trage hier deine IDs ein) ---
-OFFIZIER_ROLLE_ID = 123456789012345678  # Wer darf den Bot bedienen?
-FORUM_CHANNEL_ID = 987654321098765432   # Wo kommen die Threads rein?
-MITGLIED_ROLLE_ID = 111222333444555666  # Die finale Gilden-Rolle
-BEWERBER_ROLLE_ID = 999888777666555444  # Die temporäre Bewerber-Rolle
-DEFAULT_SERVER_NAME = "Blackhand"
-REGION = "eu"
-
-WOW_DATA = {
-    "Death Knight": ["Blood", "Frost", "Unholy"],
-    "Demon Hunter": ["Havoc", "Vengeance"],
-    "Druid": ["Balance", "Feral", "Guardian", "Restoration"],
-    "Evoker": ["Devastation", "Preservation", "Augmentation"],
-    "Hunter": ["Beast Mastery", "Marksmanship", "Survival"],
-    "Mage": ["Arcane", "Fire", "Frost"],
-    "Monk": ["Brewmaster", "Mistweaver", "Windwalker"],
-    "Paladin": ["Holy", "Protection", "Retribution"],
-    "Priest": ["Discipline", "Holy", "Shadow"],
-    "Rogue": ["Assassination", "Outlaw", "Subtlety"],
-    "Shaman": ["Elemental", "Enhancement", "Restoration"],
-    "Warlock": ["Affliction", "Demonology", "Destruction"],
-    "Warrior": ["Arms", "Fury", "Protection"]
-}
-
 # --- MODAL FÜR ABLEHNUNG ---
 class RejectModal(discord.ui.Modal, title='Ablehnung begründen'):
     reason = discord.ui.TextInput(label='Grund', style=discord.TextStyle.paragraph, required=True)
