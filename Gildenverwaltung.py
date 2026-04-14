@@ -5,12 +5,11 @@ from datetime import datetime
 import os
 
 # --- KONFIGURATION ---
-OFFIZIER_ROLLE_ID = 1480564049191370763 
-FORUM_CHANNEL_ID = 1492325655101313074 
-DEFAULT_SERVER = "Blackrock" # Dein WoW-Server
+OFFIZIER_ROLLE_ID = 123456789012345678 
+FORUM_CHANNEL_ID = 987654321098765432 
+DEFAULT_SERVER_NAME = "Blackhand" # Was standardmäßig im Feld stehen soll
 REGION = "eu"
 
-# Struktur nur mit Text
 WOW_DATA = {
     "Death Knight": ["Blood", "Frost", "Unholy"],
     "Demon Hunter": ["Havoc", "Vengeance"],
@@ -34,15 +33,28 @@ class MemberInfoModal(discord.ui.Modal, title='Mitglied Details'):
         self.char_spec = char_spec
 
     char_name = discord.ui.TextInput(label='Charakter Name', placeholder='z.B. Bolontíku')
+    
+    # NEU: Server-Feld mit Standardwert
+    server_name = discord.ui.TextInput(
+        label='Server', 
+        default=DEFAULT_SERVER_NAME, 
+        placeholder='z.B. Blackhand'
+    )
+    
     real_name = discord.ui.TextInput(label='Vorname', placeholder='z.B. Rene')
+    
     join_date = discord.ui.TextInput(
         label='Beitrittsdatum', 
         default=datetime.now().strftime("%d.%m.%Y")
     )
 
     async def on_submit(self, interaction: discord.Interaction):
+        # Servername für URL formatieren (Leerzeichen zu Bindestrichen)
+        srv_slug = self.server_name.value.replace(" ", "-").lower()
+        name_slug = self.char_name.value.lower()
+        
         # Warcraft Logs URL generieren
-        log_url = f"https://www.warcraftlogs.com/character/{REGION}/{DEFAULT_SERVER.replace(' ', '-').lower()}/{self.char_name.value.lower()}"
+        log_url = f"https://www.warcraftlogs.com/character/{REGION}/{srv_slug}/{name_slug}"
         
         # Thread Name Format: [Klasse] Name (Spec) Vorname
         thread_name = f"[{self.char_class}] {self.char_name.value} ({self.char_spec}) {self.real_name.value}"
@@ -53,6 +65,7 @@ class MemberInfoModal(discord.ui.Modal, title='Mitglied Details'):
             await forum_channel.create_thread(
                 name=thread_name,
                 content=f"## Neuer Eintrag: {self.char_name.value}\n"
+                        f"**Server:** {self.server_name.value}\n"
                         f"**Klasse:** {self.char_class}\n"
                         f"**Spec:** {self.char_spec}\n"
                         f"**Spieler:** {self.real_name.value}\n"
@@ -110,6 +123,6 @@ bot = GildenBot()
 async def setup(ctx):
     await ctx.send("### 🏰 Gildenverwaltung\nNutze den Button, um Foren-Einträge zu erstellen.", view=GildenLeitungView())
 
-# Railway/Lokal Token Logik
-TOKEN = os.getenv('DISCORD_TOKEN') or 'MTQ5MzM3NzI2ODUxMTQwODIyOQ.GX5QN5.IXfQYxGqyYyWFeLYnFSUhoOQN5zNkvQrDmgD9c'
+# Start
+TOKEN = os.getenv('DISCORD_TOKEN') or 'DEIN_BOT_TOKEN_HIER'
 bot.run(TOKEN)
