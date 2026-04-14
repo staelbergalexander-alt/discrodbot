@@ -6,7 +6,7 @@ import json
 import asyncio
 import re
 import aiohttp
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # --- KONFIGURATION ---
 # IDs werden aus Umgebungsvariablen geladen oder auf 0 gesetzt
@@ -18,16 +18,29 @@ GAST_ROLLE_ID = int(os.getenv('GAST_ROLLE_ID') or 0)
 MITGLIEDER_LISTE_KANAL_ID = int(os.getenv('MITGLIEDER_LISTE_KANAL_ID') or 0)
 REGION = "eu"
 
-# --- 1. RAID UMFRAGE LOGIK (NEU) ---
+# --- HILFSFUNKTION FÜR WEEKLY RESET ---
+def get_raid_week_dates():
+    """Berechnet den Zeitraum von diesem Mittwoch bis nächsten Dienstag."""
+    now = datetime.now()
+    # Wochentage: Mo=0, Di=1, Mi=2, Do=3, Fr=4, Sa=5, So=6
+    # Wir wollen zum letzten Mittwoch zurück (Reset-Tag)
+    days_since_wednesday = (now.weekday() - 2) % 7
+    last_wednesday = now - timedelta(days=days_since_wednesday)
+    next_tuesday = last_wednesday + timedelta(days=6)
+    
+    return last_wednesday.strftime("%d.%m."), next_tuesday.strftime("%d.%m.")
+
+# --- 1. RAID UMFRAGE LOGIK ---
 class RaidPollView(discord.ui.View):
-    def __init__(self):
+    def __init__(self, week_range):
         super().__init__(timeout=None) # Buttons bleiben permanent aktiv
-        self.votes = {day: [] for day in ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]}
+        self.week_range = week_range
+        self.votes = {day: [] for day in ["Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag", "Montag", "Dienstag"]}
 
     async def update_poll_embed(self, interaction: discord.Interaction):
         embed = discord.Embed(
-            title="⚔️ Raid-Tage Umfrage",
-            description="Wann passt es euch am besten? Klickt auf die Buttons zum Abstimmen!",
+            title=f"⚔️ Raid-Umfrage (Woche {self.week_range})",
+            description="Wann passt es euch diese Raid-ID am besten? Klickt auf die Buttons!",
             color=discord.Color.blue()
         )
         for day, voters in self.votes.items():
@@ -45,10 +58,6 @@ class RaidPollView(discord.ui.View):
             self.votes[day].append(user_id)
         await self.update_poll_embed(interaction)
 
-    @discord.ui.button(label="Mo", style=discord.ButtonStyle.gray, custom_id="poll_mo")
-    async def vote_mo(self, interaction, button): await self.handle_vote(interaction, "Montag")
-    @discord.ui.button(label="Di", style=discord.ButtonStyle.gray, custom_id="poll_di")
-    async def vote_di(self, interaction, button): await self.handle_vote(interaction, "Dienstag")
     @discord.ui.button(label="Mi", style=discord.ButtonStyle.gray, custom_id="poll_mi")
     async def vote_mi(self, interaction, button): await self.handle_vote(interaction, "Mittwoch")
     @discord.ui.button(label="Do", style=discord.ButtonStyle.gray, custom_id="poll_do")
@@ -59,6 +68,10 @@ class RaidPollView(discord.ui.View):
     async def vote_sa(self, interaction, button): await self.handle_vote(interaction, "Samstag")
     @discord.ui.button(label="So", style=discord.ButtonStyle.gray, custom_id="poll_so")
     async def vote_so(self, interaction, button): await self.handle_vote(interaction, "Sonntag")
+    @discord.ui.button(label="Mo", style=discord.ButtonStyle.gray, custom_id="poll_mo")
+    async def vote_mo(self, interaction, button): await self.handle_vote(interaction, "Montag")
+    @discord.ui.button(label="Di", style=discord.ButtonStyle.gray, custom_id="poll_di")
+    async def vote_di(self, interaction, button): await self.handle_vote(interaction, "Dienstag")
 
 # --- 2. REGISTRIERUNGS LOGIK (BEWERBUNGEN) ---
 class RejectModal(discord.ui.Modal, title='Ablehnung begründen'):
@@ -157,7 +170,11 @@ class GildenBot(commands.Bot):
     async def setup_hook(self):
         # Registriert Views, damit Buttons nach Neustart funktionieren
         self.add_view(GildenLeitungView())
-        self.add_view(RaidPollView())
+        # Hinweis: Bei Neustart wird die View ohne spezifisches Datum geladen,
+        # da die Daten in der aktiven Instanz leben. Für persistente Speicherung
+        # der Stimmen wäre eine Datenbank nötig.
+        start, end = get_raid_week_dates()
+        self.add_view(RaidPollView(f"{start} - {end}"))
 
 bot = GildenBot()
 
@@ -169,17 +186,23 @@ async def setup(ctx):
 
 @bot.command(name="raidumfrage")
 async def raidumfrage(ctx):
-    """Startet eine Raid-Tage Umfrage"""
+    """Startet eine Raid-Tage Umfrage für die aktuelle WoW-Woche (Mi-Di)"""
     if not any(role.id == OFFIZIER_ROLLE_ID for role in ctx.author.roles):
         return await ctx.send("❌ Nur für Offiziere.")
     
-    view = RaidPollView()
+    start, end = get_raid_week_dates()
+    week_str = f"{start} - {end}"
+    
+    view = RaidPollView(week_str)
     embed = discord.Embed(
-        title="⚔️ Raid-Tage Umfrage",
-        description="Wann passt es euch am besten? Klickt auf die Buttons!",
+        title=f"⚔️ Raid-Umfrage (Woche {week_str})",
+        description="Wann passt es euch diese Raid-ID am besten? Klickt auf die Buttons!",
         color=discord.Color.blue()
     )
-    for day in ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]:
+    
+    # Sortierung nach Raid-Woche: Beginnend mit Reset-Tag (Mittwoch)
+    raid_days = ["Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag", "Montag", "Dienstag"]
+    for day in raid_days:
         embed.add_field(name=f"{day} (0)", value="Keine Stimmen", inline=False)
     
     await ctx.send(embed=embed, view=view)
