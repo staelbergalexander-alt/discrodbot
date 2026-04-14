@@ -17,6 +17,14 @@ MITGLIEDER_LISTE_KANAL_ID =  int(os.getenv('MITGLIEDER_LISTE_KANAL_ID'))
 DEFAULT_SERVER_NAME = os.getenv('DEFAULT_SERVER') or "Blackhand"
 REGION = "eu"
 
+# Hilfsfunktion für Raid-Daten
+def get_raid_week_dates():
+    now = datetime.now()
+    days_until_thursday = (3 - now.weekday() + 7) % 7
+    if days_until_thursday == 0: days_until_thursday = 7
+    next_thursday = now + timedelta(days=days_until_thursday)
+    following_wednesday = next_thursday + timedelta(days=6)
+    return next_thursday.strftime("%d.%m."), following_wednesday.strftime("%d.%m.")
 # --- MODALS & VIEWS (Logik wie gehabt) ---
 
 class RejectModal(discord.ui.Modal, title='Ablehnung begründen'):
