@@ -1,14 +1,14 @@
 import discord
-import asyncio
 from discord import app_commands
 from discord.ext import commands
 from datetime import datetime
 import os
+import asyncio
 
-# --- KONFIGURATION ---
-OFFIZIER_ROLLE_ID = int(os.getenv('OFFIZIER_ROLLE_ID') or 1480564049191370763)
-FORUM_CHANNEL_ID = int(os.getenv('FORUM_CHANNEL_ID') or 1492325655101313074)
-DEFAULT_SERVER_NAME = "Blackhand" # Was standardmäßig im Feld stehen soll
+# --- KONFIGURATION (Sicherer Abruf über Umgebungsvariablen) ---
+OFFIZIER_ROLLE_ID = int(os.getenv('OFFIZIER_ROLLE_ID') or 1234567890)
+FORUM_CHANNEL_ID = int(os.getenv('FORUM_CHANNEL_ID') or 9876543210)
+DEFAULT_SERVER_NAME = os.getenv('DEFAULT_SERVER') or "Blackhand"
 REGION = "eu"
 
 WOW_DATA = {
