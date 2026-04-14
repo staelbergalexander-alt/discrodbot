@@ -10,6 +10,7 @@ OFFIZIER_ROLLE_ID = int(os.getenv('OFFIZIER_ROLLE_ID'))
 FORUM_CHANNEL_ID = int(os.getenv('FORUM_CHANNEL_ID'))
 MITGLIED_ROLLE_ID = int(os.getenv('MITGLIED_ROLLE_ID'))
 BEWERBER_ROLLE_ID = int(os.getenv('BEWERBER_ROLLE_ID'))
+GAST_ROLLE_ID = int(os.getenv('GAST_ROLLE_ID'))
 DEFAULT_SERVER_NAME = os.getenv('DEFAULT_SERVER') or "Blackhand"
 REGION = "eu"
 
@@ -50,7 +51,7 @@ class ThreadActionView(discord.ui.View):
             b_role = interaction.guild.get_role(BEWERBER_ROLLE_ID)
             try:
                 if m_role: await member.add_roles(m_role)
-                if b_role: await member.remove_roles(b_role) # Bewerber-Rolle entfernen
+                if b_role: await member.remove_roles(b_role)
                 await interaction.response.send_message(f"✅ {member.mention} aufgenommen! Bewerber-Status entfernt.")
                 await asyncio.sleep(5)
                 await interaction.channel.delete()
@@ -65,7 +66,7 @@ class ThreadActionView(discord.ui.View):
         if member:
             b_role = interaction.guild.get_role(BEWERBER_ROLLE_ID)
             if b_role: 
-                try: await member.remove_roles(b_role) # Bewerber-Rolle auch bei Ablehnung weg
+                try: await member.remove_roles(b_role)
                 except: pass
         await interaction.response.send_modal(RejectModal())
 
@@ -76,8 +77,12 @@ class MemberInfoModal(discord.ui.Modal, title='Mitglied Details'):
         self.char_class = char_class
         self.char_spec = char_spec
 
-    discord_search = discord.ui.TextInput(label='Discord User (Name oder ID)', placeholder='Discord ID')
-    ingame_name = discord.ui.TextInput(label='Ingame Charakter Name')
+    # HIER IST DER NEUE PLATZHALTER
+    discord_search = discord.ui.TextInput(
+        label='Discord User Suche', 
+        placeholder='Discord ID' 
+    )
+    ingame_name = discord.ui.TextInput(label='Ingame Charakter Name', placeholder='z.B. Bolontíku')
     real_name = discord.ui.TextInput(label='Vorname')
     server_name = discord.ui.TextInput(label='Server', default=DEFAULT_SERVER_NAME)
 
@@ -93,7 +98,7 @@ class MemberInfoModal(discord.ui.Modal, title='Mitglied Details'):
         # 2. Forum Thread erstellen
         srv_slug = self.server_name.value.replace(" ", "-").lower()
         log_url = f"https://www.warcraftlogs.com/character/{REGION}/{srv_slug}/{self.ingame_name.value.lower()}"
-        thread_name = f"[{self.char_class}] {self.ingame_name.value} ({self.char_spec})"
+        thread_name = f"[{self.char_class}] {self.ingame_name.value} | {self.real_name.value}"
         
         forum_channel = interaction.guild.get_channel(FORUM_CHANNEL_ID)
         if forum_channel:
@@ -102,20 +107,27 @@ class MemberInfoModal(discord.ui.Modal, title='Mitglied Details'):
                 content=f"### 🛡️ Neuer Eintrag: {self.ingame_name.value}\n**Klasse:** {self.char_class} ({self.char_spec})\n**Spieler:** {self.real_name.value}\n📈 [Logs]({log_url})"
             )
             
-            # 3. Rollen & Nickname (Bewerber-Status setzen)
+            # 3. Rollen & Nickname
             status = ""
             if member:
                 view = ThreadActionView(member_id=member.id)
                 await res.thread.send("💡 **Entscheidung treffen:**", view=view)
                 try:
                     await member.edit(nick=f"{self.ingame_name.value} | {self.real_name.value}")
+                    
                     c_role = discord.utils.get(interaction.guild.roles, name=self.char_class)
                     b_role = interaction.guild.get_role(BEWERBER_ROLLE_ID)
+                    g_role = interaction.guild.get_role(GAST_ROLLE_ID)
+                    
+                    if g_role: await member.remove_roles(g_role) # Gast entfernen
                     if c_role: await member.add_roles(c_role)
-                    if b_role: await member.add_roles(b_role) # Hier bekommt er die Bewerber-Rolle
-                    status = f"✅ Setup für {member.mention} abgeschlossen."
-                except: status = "⚠️ Rollen-Update fehlgeschlagen."
-            else: status = "⚠️ User nicht gefunden."
+                    if b_role: await member.add_roles(b_role)
+                    
+                    status = f"✅ {member.mention} ist nun Bewerber (Gast entfernt)."
+                except: 
+                    status = "⚠️ Rollen-Update fehlgeschlagen."
+            else: 
+                status = "⚠️ User nicht gefunden."
 
             await interaction.response.send_message(f"Eintrag erstellt!\n{status}", ephemeral=True)
 
