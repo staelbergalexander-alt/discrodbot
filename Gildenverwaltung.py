@@ -8,11 +8,11 @@ import aiohttp
 from datetime import datetime, timedelta
 
 # --- KONFIGURATION (Bitte IDs anpassen!) ---
-OFFIZIER_ROLLE_ID = 0  # Deine Offizier-Rollen ID
-FORUM_CHANNEL_ID = 0   # Deine Forum-Kanal ID
-MITGLIED_ROLLE_ID = 0  # Deine Mitglied-Rollen ID
-BEWERBER_ROLLE_ID = 0  # Deine Bewerber-Rollen ID
-BOT_TOKEN = "DEIN_TOKEN_HIER" # Oder via Umgebungsvariable
+OFFIZIER_ROLLE_ID = int(os.getenv('OFFIZIER_ROLLE_ID') or 0)
+FORUM_CHANNEL_ID = int(os.getenv('FORUM_CHANNEL_ID') or 0)
+MITGLIED_ROLLE_ID = int(os.getenv('MITGLIED_ROLLE_ID') or 0)
+BEWERBER_ROLLE_ID = int(os.getenv('BEWERBER_ROLLE_ID') or 0)
+BOT_TOKEN = int(os.getenv('DISCORD_TOKEN') or 0)
 
 CLASS_COLORS = {
     "Death Knight": 0xC41E3A, "Demon Hunter": 0xA330C9, "Druid": 0xFF7C0A,
