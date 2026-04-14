@@ -147,3 +147,51 @@ async def setup(ctx):
     await ctx.send("### 🏰 Gildenverwaltung\nKlicke auf den Button, um ein Mitglied per Raider.io Link zu registrieren.", view=GildenLeitungView())
 
 bot.run(os.getenv('DISCORD_TOKEN') or 'DEIN_TOKEN')
+
+@bot.command(name="inv")
+async def inv(ctx):
+    # Berechtigung prüfen (Offizier-Rolle)
+    if not any(role.id == OFFIZIER_ROLLE_ID for role in ctx.author.roles):
+        return await ctx.send("❌ Nur Offiziere dürfen das!")
+
+    # Die Rolle holen, die eingeladen werden soll (z.B. @Mitglied)
+    target_role = ctx.guild.get_role(MITGLIED_ROLLE_ID)
+    
+    if not target_role:
+        return await ctx.send("❌ Die Mitglieder-Rolle wurde nicht gefunden. Prüfe die ID!")
+
+    invite_list = []
+    
+    # Alle Mitglieder des Servers durchgehen
+    for m in ctx.guild.members:
+        if target_role in m.roles:
+            # Wir nehmen den Teil VOR dem "|" aus dem Nickname (z.B. "Bolontiku")
+            # Wenn kein "|" da ist, nehmen wir den normalen Anzeigenamen
+            name_parts = m.display_name.split("|")
+            clean_name = name_parts[0].strip()
+            invite_list.append(f"/inv {clean_name}")
+
+    if not invite_list:
+        return await ctx.send("❌ Keine Mitglieder mit dieser Rolle online/gefunden.")
+
+    # In Blöcke teilen (falls die Liste sehr lang ist)
+    invite_text = "\n".join(invite_list)
+    
+    # In einem Code-Block ausgeben zum einfachen Kopieren
+    if len(invite_text) > 1900:
+        await ctx.send("⚠️ Liste ist sehr lang, hier ist der Anfang:")
+        await ctx.send(f"
+### Wie das funktioniert:
+1.  Du tippst einfach `!inv` in deinen Offizier-Kanal.
+2.  Der Bot schaut: "Wer hat die Rolle mit der ID `MITGLIED_ROLLE_ID`?"
+3.  Er nimmt den Nicknamen (z.B. **Boom | Alex**), schneidet alles nach dem Trennstrich ab und behält nur **Bolontíku**.
+4.  Er schreibt dir eine Liste mit `/inv Bolontíku`, `/inv Versary`, etc.
+
+### Profi-Tipp für WoW:
+Kopiere diese Liste aber **nicht** direkt in den normalen Chat (das spammt den Chat voll und WoW blockt manchmal zu viele Befehle auf einmal). 
+
+Am besten nutzt du dafür ein Ingame-Makro oder das Addon **"CopyPasta"**. Damit kannst du den ganzen Block einfügen und WoW arbeitet die Invites sauber nacheinander ab.
+
+**Soll der Bot die Liste vielleicht alphabetisch sortieren, damit du sie besser mit deiner Gildenliste ingame abgleichen kannst?**
+
+
