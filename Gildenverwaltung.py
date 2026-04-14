@@ -113,7 +113,7 @@ class MemberInfoModal(discord.ui.Modal, title='Mitglied Details'):
         self.char_class = char_class
         self.char_spec = char_spec
 
-    discord_search = discord.ui.TextInput(label='Discord User (Name oder ID)')
+    discord_search = discord.ui.TextInput(label='Discord User (Name oder ID)'placeholder='Discord ID')
     ingame_name = discord.ui.TextInput(label='Ingame Charakter Name')
     real_name = discord.ui.TextInput(label='Vorname')
     server_name = discord.ui.TextInput(label='Server', default=DEFAULT_SERVER_NAME)
