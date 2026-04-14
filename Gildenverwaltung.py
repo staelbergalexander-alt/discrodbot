@@ -8,13 +8,11 @@ import aiohttp
 from datetime import datetime, timedelta
 
 # --- KONFIGURATION ---
-# Trage hier deine IDs ein oder nutze Umgebungsvariablen
 OFFIZIER_ROLLE_ID = int(os.getenv('OFFIZIER_ROLLE_ID') or 0)
 FORUM_CHANNEL_ID = int(os.getenv('FORUM_CHANNEL_ID') or 0)
 MITGLIED_ROLLE_ID = int(os.getenv('MITGLIED_ROLLE_ID') or 0)
 BEWERBER_ROLLE_ID = int(os.getenv('BEWERBER_ROLLE_ID') or 0)
 
-# WoW Klassenfarben für die Embeds
 CLASS_COLORS = {
     "Death Knight": 0xC41E3A, "Demon Hunter": 0xA330C9, "Druid": 0xFF7C0A,
     "Evoker": 0x33937F, "Hunter": 0xAAD372, "Mage": 0x3FC7EB,
@@ -24,17 +22,25 @@ CLASS_COLORS = {
 }
 
 def get_raid_week_dates():
-    """Berechnet den Zeitraum von Donnerstag bis nächsten Mittwoch."""
+    """Berechnet den Zeitraum für die NÄCHSTE Raid-Woche (kommender Donnerstag bis Mittwoch)."""
     now = datetime.now()
-    # Finde den letzten Donnerstag (Wochentag 3)
-    days_since_thursday = (now.weekday() - 3) % 7
-    last_thursday = now - timedelta(days=days_since_thursday)
-    next_wednesday = last_thursday + timedelta(days=6)
-    return last_thursday.strftime("%d.%m."), next_wednesday.strftime("%d.%m.")
+    # Wochentage: Mo=0, Di=1, Mi=2, Do=3, Fr=4, Sa=5, So=6
+    # Berechne Tage bis zum nächsten Donnerstag
+    days_until_thursday = (3 - now.weekday() + 7) % 7
+    
+    # Wenn heute Donnerstag ist, planen wir für den Donnerstag in einer Woche
+    if days_until_thursday == 0:
+        days_until_thursday = 7
+        
+    next_thursday = now + timedelta(days=days_until_thursday)
+    following_wednesday = next_thursday + timedelta(days=6)
+    
+    return next_thursday.strftime("%d.%m."), following_wednesday.strftime("%d.%m.")
 
 # --- RAID UMFRAGE KOMPONENTE ---
 class RaidPollView(discord.ui.View):
     def __init__(self, week_range):
+        # Timeout=None sorgt dafür, dass die Buttons auch nach Tagen noch funktionieren
         super().__init__(timeout=None)
         self.week_range = week_range
         self.days_order = ["Donnerstag", "Freitag", "Samstag", "Sonntag", "Montag", "Dienstag", "Mittwoch"]
@@ -42,15 +48,16 @@ class RaidPollView(discord.ui.View):
 
     async def update_poll_embed(self, interaction: discord.Interaction):
         embed = discord.Embed(
-            title=f"⚔️ Raid-Umfrage ({self.week_range})",
-            description="Wann habt ihr Zeit? (Start ab Donnerstag nach Reset)",
-            color=discord.Color.blue()
+            title=f"⚔️ Raid-Umfrage für NÄCHSTE Woche ({self.week_range})",
+            description="Wann habt ihr Zeit? (Planung für die kommende ID)",
+            color=discord.Color.green()
         )
         for day in self.days_order:
             voters = self.votes[day]
             count = len(voters)
             voter_mentions = ", ".join([f"<@{v_id}>" for v_id in voters]) if voters else "Keine Stimmen"
             embed.add_field(name=f"{day} ({count})", value=voter_mentions, inline=False)
+        
         await interaction.response.edit_message(embed=embed, view=self)
 
     async def handle_vote(self, interaction: discord.Interaction, day: str):
@@ -104,8 +111,6 @@ class RegistrationModal(discord.ui.Modal, title='Mitglied Registrierung'):
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        
-        # Regex für Realm und Name aus Rio Link
         match = re.search(r'characters/eu/([^/]+)/([^/]+)', self.rio_link.value.lower())
         if not match:
             return await interaction.followup.send("❌ Ungültiger Link!", ephemeral=True)
@@ -124,7 +129,6 @@ class RegistrationModal(discord.ui.Modal, title='Mitglied Registrierung'):
         join_date = datetime.now().strftime("%d.%m.%Y")
         wcl_link = f"https://www.warcraftlogs.com/character/eu/{realm}/{name}"
 
-        # User finden
         raw_id = self.discord_user.value.replace("<@", "").replace("!", "").replace(">", "").replace("&", "")
         member = interaction.guild.get_member(int(raw_id)) if raw_id.isdigit() else None
 
@@ -143,7 +147,6 @@ class RegistrationModal(discord.ui.Modal, title='Mitglied Registrierung'):
                 await thread.thread.send("💡 Offiziers-Aktion:", view=ThreadActionView(member.id))
                 try:
                     await member.edit(nick=f"{char_name} | {self.real_name.value}")
-                    # Optionale Klassenrolle zuweisen
                     c_role = discord.utils.get(interaction.guild.roles, name=char_class)
                     if c_role: await member.add_roles(c_role)
                 except: pass
@@ -159,11 +162,10 @@ class GildenBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
     
     async def setup_hook(self):
-        # Statische Views registrieren
+        # Statische Views registrieren für Beständigkeit nach Neustart
         self.add_view(GildenLeitungView())
         start, end = get_raid_week_dates()
         self.add_view(RaidPollView(f"{start} - {end}"))
-        # Slash Commands synchronisieren
         await self.tree.sync()
 
 class GildenLeitungView(discord.ui.View):
@@ -185,17 +187,23 @@ async def setup(ctx):
 
 @bot.command()
 async def raidumfrage(ctx):
-    """Erstellt eine neue Raid-Umfrage"""
+    """Erstellt eine neue Raid-Umfrage für die KOMMENDE Woche"""
     if not any(r.id == OFFIZIER_ROLLE_ID for r in ctx.author.roles):
         return await ctx.send("❌ Keine Berechtigung.")
+    
     start, end = get_raid_week_dates()
     view = RaidPollView(f"{start} - {end}")
-    embed = discord.Embed(title=f"⚔️ Raid-Umfrage ({start} - {end})", color=discord.Color.blue())
+    
+    embed = discord.Embed(
+        title=f"⚔️ Raid-Umfrage ({start} - {end})", 
+        description="Bitte tragt eure Zeiten für die **nächste ID** ein.",
+        color=discord.Color.blue()
+    )
     for d in ["Donnerstag", "Freitag", "Samstag", "Sonntag", "Montag", "Dienstag", "Mittwoch"]:
         embed.add_field(name=f"{d} (0)", value="Keine Stimmen", inline=False)
+    
     await ctx.send(embed=embed, view=view)
 
-# --- SLASH COMMAND FÜR BEREITS ERSTELLTE EINTRÄGE ---
 @bot.tree.command(name="update_entry", description="Aktualisiert einen Thread mit der richtigen Klassenfarbe")
 @app_commands.describe(rio_link="Der Raider.io Link des Charakters")
 async def update_entry(interaction: discord.Interaction, rio_link: str):
