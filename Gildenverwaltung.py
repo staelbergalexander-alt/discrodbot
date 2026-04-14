@@ -5,9 +5,9 @@ from datetime import datetime
 import os
 import asyncio
 
-# --- KONFIGURATION (Sicherer Abruf über Umgebungsvariablen) ---
-OFFIZIER_ROLLE_ID = int(os.getenv('OFFIZIER_ROLLE_ID') or 1480564049191370763)
-FORUM_CHANNEL_ID = int(os.getenv('FORUM_CHANNEL_ID') or 1492325655101313074)
+# --- KONFIGURATION (Über Umgebungsvariablen oder Standardwerte) ---
+OFFIZIER_ROLLE_ID = int(os.getenv('OFFIZIER_ROLLE_ID') or 'DEIN_TOKEN_LOKAL')
+FORUM_CHANNEL_ID = int(os.getenv('FORUM_CHANNEL_ID') or 'DEIN_TOKEN_LOKAL')
 DEFAULT_SERVER_NAME = os.getenv('DEFAULT_SERVER') or "Blackhand"
 REGION = "eu"
 
@@ -33,56 +33,77 @@ class MemberInfoModal(discord.ui.Modal, title='Mitglied Details'):
         self.char_class = char_class
         self.char_spec = char_spec
 
-    char_name = discord.ui.TextInput(label='Charakter Name', placeholder='Exakter Discord-Name des Users')
-    server_name = discord.ui.TextInput(label='Server', default=DEFAULT_SERVER_NAME)
-    real_name = discord.ui.TextInput(label='Vorname', placeholder='z.B. Rene')
-    join_date = discord.ui.TextInput(label='Beitrittsdatum', default=datetime.now().strftime("%d.%m.%Y"))
+    # Felder im Eingabefenster
+    discord_search = discord.ui.TextInput(
+        label='Discord User (Name oder ID)', 
+        placeholder='ID per Rechtsklick kopieren für 100% Trefferquote'
+    )
+    ingame_name = discord.ui.TextInput(
+        label='Ingame Charakter Name', 
+        placeholder='z.B. Bolontíku'
+    )
+    real_name = discord.ui.TextInput(
+        label='Vorname des Spielers', 
+        placeholder='z.B. Rene'
+    )
+    server_name = discord.ui.TextInput(
+        label='WoW-Server', 
+        default=DEFAULT_SERVER_NAME
+    )
 
     async def on_submit(self, interaction: discord.Interaction):
-        # 1. Daten vorbereiten
-        srv_slug = self.server_name.value.replace(" ", "-").lower()
-        log_url = f"https://www.warcraftlogs.com/character/{REGION}/{srv_slug}/{self.char_name.value.lower()}"
-        thread_name = f"[{self.char_class}] {self.char_name.value} ({self.char_spec}) {self.real_name.value}"
+        # 1. User auf Discord finden
+        raw_input = self.discord_search.value.strip()
+        user_id_str = raw_input.replace("<@", "").replace("!", "").replace(">", "").replace("&", "")
         
-        # 2. Forum Post erstellen
+        member = None
+        if user_id_str.isdigit():
+            member = interaction.guild.get_member(int(user_id_str))
+        if not member:
+            member = discord.utils.get(interaction.guild.members, display_name=raw_input)
+        if not member:
+            member = discord.utils.get(interaction.guild.members, name=raw_input)
+
+        # 2. Daten für Forum & Logs
+        srv_slug = self.server_name.value.replace(" ", "-").lower()
+        log_url = f"https://www.warcraftlogs.com/character/{REGION}/{srv_slug}/{self.ingame_name.value.lower()}"
+        thread_name = f"[{self.char_class}] {self.ingame_name.value} ({self.char_spec}) {self.real_name.value}"
+        
+        # 3. Forum Post erstellen
         forum_channel = interaction.guild.get_channel(FORUM_CHANNEL_ID)
         if forum_channel:
             await forum_channel.create_thread(
                 name=thread_name,
-                content=f"## Neuer Eintrag: {self.char_name.value}\n"
-                        f"**Server:** {self.server_name.value}\n**Klasse:** {self.char_class} ({self.char_spec})\n"
-                        f"**Spieler:** {self.real_name.value}\n**Beigetreten:** {self.join_date.value}\n\n"
+                content=f"## Neuer Eintrag: {self.ingame_name.value}\n"
+                        f"**Server:** {self.server_name.value}\n"
+                        f"**Klasse:** {self.char_class} ({self.char_spec})\n"
+                        f"**Spieler:** {self.real_name.value}\n\n"
                         f"📈 [Warcraft Logs Profil]({log_url})"
             )
 
-        # 3. User finden für Rolle & Nickname
-        member = discord.utils.get(interaction.guild.members, display_name=self.char_name.value)
-        # Falls er nicht über display_name gefunden wird, versuchen wir es über den Namen selbst
-        if not member:
-            member = discord.utils.get(interaction.guild.members, name=self.char_name.value)
-
-        update_info = ""
+        # 4. Nickname & Rollen Update
+        status_update = ""
         if member:
-            # A) Nickname anpassen: "Charname (Vorname)"
-            new_nick = f"{self.char_name.value} ({self.real_name.value})"
+            # Nickname ändern: "Charname (Vorname)"
+            new_nick = f"{self.ingame_name.value} ({self.real_name.value})"
             try:
                 await member.edit(nick=new_nick)
-                update_info += f"✅ Nickname zu `{new_nick}` geändert.\n"
-            except discord.Forbidden:
-                update_info += "❌ Keine Rechte für Nickname-Änderung.\n"
+                status_update += f"✅ Nickname zu `{new_nick}` geändert.\n"
+            except:
+                status_update += "❌ Nickname-Rechte fehlen (Bot-Rolle zu niedrig?).\n"
 
-            # B) Rolle vergeben
+            # Rolle geben
             role = discord.utils.get(interaction.guild.roles, name=self.char_class)
             if role:
                 try:
                     await member.add_roles(role)
-                    update_info += f"✅ Rolle `{self.char_class}` zugewiesen."
-                except discord.Forbidden:
-                    update_info += "❌ Keine Rechte für Rollenzuweisung."
+                    status_update += f"✅ Rolle `{self.char_class}` zugewiesen."
+                except:
+                    status_update += "❌ Rollen-Rechte fehlen."
         else:
-            update_info = "⚠️ User nicht auf dem Discord gefunden (Name prüfen)."
+            status_update = "⚠️ Discord-User wurde nicht gefunden. Bitte manuell anpassen."
 
-        await interaction.response.send_message(f"✅ Eintrag erstellt!\n{update_info}", ephemeral=True)
+        await interaction.response.send_message(f"✅ Forum-Eintrag erstellt!\n{status_update}", ephemeral=True)
 
 class SpecSelect(discord.ui.Select):
     def __init__(self, char_class):
@@ -92,7 +113,7 @@ class SpecSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.send_modal(MemberInfoModal(self.char_class, self.values[0]))
-        # Löscht das Auswahl-Menü im Kanal für die Sauberkeit
+        # Auswahlmenü löschen für Kanalsauberkeit
         await interaction.message.delete()
 
 class GildenLeitungView(discord.ui.View):
@@ -109,19 +130,19 @@ class GildenLeitungView(discord.ui.View):
             async def class_callback(inter: discord.Interaction):
                 spec_view = discord.ui.View()
                 spec_view.add_item(SpecSelect(select.values[0]))
-                await inter.response.send_message(f"Gewählte Klasse: **{select.values[0]}**", view=spec_view)
+                await inter.response.send_message(f"Gewählt: **{select.values[0]}**", view=spec_view)
             
             select.callback = class_callback
             view.add_item(select)
-            await interaction.response.send_message("Wähle die Klasse:", view=view, ephemeral=True)
+            await interaction.response.send_message("Wähle die Klasse des neuen Mitglieds:", view=view, ephemeral=True)
         else:
-            await interaction.response.send_message("Du hast keine Berechtigung.", ephemeral=True)
+            await interaction.response.send_message("Keine Berechtigung!", ephemeral=True)
 
 class GildenBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
         intents.message_content = True
-        intents.members = True # WICHTIG für Nicknames & Rollen
+        intents.members = True # Erlaubt das Finden von Usern und Ändern von Nicks
         super().__init__(command_prefix="!", intents=intents)
 
     async def setup_hook(self):
@@ -132,10 +153,11 @@ bot = GildenBot()
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def setup(ctx):
-    # Kanal von alten Bot-Nachrichten säubern
+    # Räumt den Kanal auf
     await ctx.channel.purge(limit=5, check=lambda m: m.author == bot.user)
-    await ctx.send("### 🏰 Gildenverwaltung\nButton nutzen, um Mitglieder einzutragen.", view=GildenLeitungView())
+    await ctx.send("### 🏰 Gildenverwaltung\nKlicke auf den Button, um ein Mitglied im Forum zu registrieren, die Rolle zuzuweisen und den Namen anzupassen.", view=GildenLeitungView())
     await ctx.message.delete()
 
-TOKEN = os.getenv('DISCORD_TOKEN') or 'DEIN_TOKEN'
+# Start
+TOKEN = os.getenv('DISCORD_TOKEN') or 'DEIN_TOKEN_LOKAL'
 bot.run(TOKEN)
