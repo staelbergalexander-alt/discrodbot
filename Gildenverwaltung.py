@@ -57,6 +57,49 @@ class ThreadActionView(discord.ui.View):
     async def reject(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(RejectModal(self.member_id))
 
+# --- RAID UMFRAGE KOMPONENTE ---
+class RaidPollView(discord.ui.View):
+    def __init__(self, week_range="Unbekannt"):
+        super().__init__(timeout=None)
+        self.week_range = week_range
+        self.days_order = ["Donnerstag", "Freitag", "Samstag", "Sonntag", "Montag", "Dienstag", "Mittwoch"]
+
+    async def handle_vote(self, interaction: discord.Interaction, day_index: int):
+        embed = interaction.message.embeds[0]
+        field = embed.fields[day_index]
+        user_mention = interaction.user.mention
+        
+        # Aktuelle Liste der Voter aus dem Embed-Feld holen
+        current_voters = field.value.split(", ") if field.value != "Keine Stimmen" else []
+        
+        if user_mention in current_voters:
+            current_voters.remove(user_mention)
+        else:
+            current_voters.append(user_mention)
+        
+        new_value = ", ".join(current_voters) if current_voters else "Keine Stimmen"
+        count = len(current_voters)
+        day_name = self.days_order[day_index]
+        
+        embed.set_field_at(day_index, name=f"{day_name} ({count})", value=new_value, inline=False)
+        await interaction.response.edit_message(embed=embed)
+
+    # Buttons mit festen Custom-IDs für Persistenz
+    @discord.ui.button(label="Do", style=discord.ButtonStyle.gray, custom_id="poll_0")
+    async def v_0(self, i, b): await self.handle_vote(i, 0)
+    @discord.ui.button(label="Fr", style=discord.ButtonStyle.gray, custom_id="poll_1")
+    async def v_1(self, i, b): await self.handle_vote(i, 1)
+    @discord.ui.button(label="Sa", style=discord.ButtonStyle.gray, custom_id="poll_2")
+    async def v_2(self, i, b): await self.handle_vote(i, 2)
+    @discord.ui.button(label="So", style=discord.ButtonStyle.gray, custom_id="poll_3")
+    async def v_3(self, i, b): await self.handle_vote(i, 3)
+    @discord.ui.button(label="Mo", style=discord.ButtonStyle.gray, custom_id="poll_4")
+    async def v_4(self, i, b): await self.handle_vote(i, 4)
+    @discord.ui.button(label="Di", style=discord.ButtonStyle.gray, custom_id="poll_5")
+    async def v_5(self, i, b): await self.handle_vote(i, 5)
+    @discord.ui.button(label="Mi", style=discord.ButtonStyle.gray, custom_id="poll_6")
+    async def v_6(self, i, b): await self.handle_vote(i, 6)
+
 # --- DAS SUPER-QUICK MODAL ---
 
 class SuperQuickModal(discord.ui.Modal, title='Schnell-Registrierung'):
