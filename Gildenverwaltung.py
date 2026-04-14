@@ -98,6 +98,10 @@ class ThreadActionView(discord.ui.View):
                 await interaction.response.send_message(f"✅ {member.mention} aufgenommen!")
                 await asyncio.sleep(5); await interaction.channel.delete()
             except: await interaction.response.send_message("Rechte fehlen!", ephemeral=True)
+                
+    @discord.ui.button(label="Ablehnen", style=discord.ButtonStyle.danger, custom_id="reject_btn")
+    async def reject(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(RejectModal(self.member_id))
 
 class SuperQuickModal(discord.ui.Modal, title='Schnell-Registrierung'):
     rio_link = discord.ui.TextInput(label='Raider.io Link', required=True)
