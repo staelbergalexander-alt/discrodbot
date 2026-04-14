@@ -187,6 +187,28 @@ bot = GildenBot()
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def setup(ctx):
+    await ctx.send("### 🏰 Gildenverwaltung\nKlicke auf den Button, um ein Mitglied zu registrieren.", view=GildenLeitungView())
+
+@bot.command()
+async def raidumfrage(ctx):
+    """Erstellt eine neue Raid-Umfrage für die kommende Woche"""
+    if not any(role.id == OFFIZIER_ROLLE_ID for role in ctx.author.roles):
+        return await ctx.send("❌ Keine Berechtigung.")
+    
+    start, end = get_raid_week_dates()
+    embed = discord.Embed(
+        title=f"⚔️ Raid-Umfrage ({start} - {end})",
+        description="Bitte tragt eure Zeiten für die **nächste ID** ein.",
+        color=discord.Color.blue()
+    )
+    for day in ["Donnerstag", "Freitag", "Samstag", "Sonntag", "Montag", "Dienstag", "Mittwoch"]:
+        embed.add_field(name=f"{day} (0)", value="Keine Stimmen", inline=False)
+    
+    await ctx.send(embed=embed, view=RaidPollView(f"{start} - {end}"))
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def setup(ctx):
     await ctx.send("### 🏰 Gildenverwaltung\nKlicke auf den Button, um ein Mitglied per Raider.io Link zu registrieren.", view=GildenLeitungView())
 
 bot.run(os.getenv('DISCORD_TOKEN') or 'DEIN_TOKEN')
