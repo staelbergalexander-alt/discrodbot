@@ -5,8 +5,8 @@ from datetime import datetime
 import os
 
 # --- KONFIGURATION ---
-OFFIZIER_ROLLE_ID = os.getenv('OFFI_ROLE_ID')
-FORUM_CHANNEL_ID = os.getenv('FORUM_ID')
+OFFIZIER_ROLLE_ID = int(os.getenv('OFFIZIER_ROLLE_ID') or 1480564049191370763)
+FORUM_CHANNEL_ID = int(os.getenv('FORUM_CHANNEL_ID') or 1492325655101313074)
 DEFAULT_SERVER_NAME = "Blackhand" # Was standardmäßig im Feld stehen soll
 REGION = "eu"
 
