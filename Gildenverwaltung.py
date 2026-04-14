@@ -4,6 +4,7 @@ from discord.ext import commands
 from datetime import datetime
 import os
 import asyncio
+import re
 
 # --- KONFIGURATION (Über Umgebungsvariablen oder Standardwerte) ---
 OFFIZIER_ROLLE_ID = int(os.getenv('OFFIZIER_ROLLE_ID'))
