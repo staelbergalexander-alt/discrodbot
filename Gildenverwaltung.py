@@ -29,15 +29,24 @@ WOW_DATA = {
     "Warlock": ["Affliction", "Demonology", "Destruction"],
     "Warrior": ["Arms", "Fury", "Protection"]
 }
-# --- MODAL FÜR ABLEHNUNG ---
+
 class RejectModal(discord.ui.Modal, title='Ablehnung begründen'):
     reason = discord.ui.TextInput(label='Grund', style=discord.TextStyle.paragraph, required=True)
+    def __init__(self, member_id):
+        super().__init__()
+        self.member_id = member_id
 
     async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.send_message(f"❌ **Abgelehnt.**\n**Begründung:** {self.reason.value}")
+        member = interaction.guild.get_member(self.member_id)
+        if member:
+            b_role, g_role = interaction.guild.get_role(BEWERBER_ROLLE_ID), interaction.guild.get_role(GAST_ROLLE_ID)
+            try:
+                if b_role: await member.remove_roles(b_role)
+                if g_role: await member.add_roles(g_role)
+            except: pass
+        await interaction.response.send_message(f"❌ Abgelehnt. Grund: {self.reason.value}")
         await interaction.channel.edit(locked=True, archived=True)
 
-# --- VIEW FÜR BUTTONS IM THREAD ---
 class ThreadActionView(discord.ui.View):
     def __init__(self, member_id):
         super().__init__(timeout=None)
@@ -47,97 +56,79 @@ class ThreadActionView(discord.ui.View):
     async def accept(self, interaction: discord.Interaction, button: discord.ui.Button):
         member = interaction.guild.get_member(self.member_id)
         if member:
-            m_role = interaction.guild.get_role(MITGLIED_ROLLE_ID)
-            b_role = interaction.guild.get_role(BEWERBER_ROLLE_ID)
+            m_role, b_role = interaction.guild.get_role(MITGLIED_ROLLE_ID), interaction.guild.get_role(BEWERBER_ROLLE_ID)
             try:
                 if m_role: await member.add_roles(m_role)
                 if b_role: await member.remove_roles(b_role)
-                await interaction.response.send_message(f"✅ {member.mention} aufgenommen! Bewerber-Status entfernt.")
-                await asyncio.sleep(5)
-                await interaction.channel.delete()
-            except:
-                await interaction.response.send_message("❌ Fehler bei Rollenvergabe.", ephemeral=True)
-        else:
-            await interaction.response.send_message("⚠️ User nicht gefunden.", ephemeral=True)
+                await interaction.response.send_message(f"✅ {member.mention} aufgenommen!")
+                await asyncio.sleep(5); await interaction.channel.delete()
+            except: await interaction.response.send_message("Rechte fehlen!", ephemeral=True)
 
     @discord.ui.button(label="Ablehnen", style=discord.ButtonStyle.danger, custom_id="reject_btn")
     async def reject(self, interaction: discord.Interaction, button: discord.ui.Button):
-        member = interaction.guild.get_member(self.member_id)
-        if member:
-            b_role = interaction.guild.get_role(BEWERBER_ROLLE_ID)
-            if b_role: 
-                try: await member.remove_roles(b_role)
-                except: pass
-        await interaction.response.send_modal(RejectModal())
+        await interaction.response.send_modal(RejectModal(self.member_id))
 
-# --- HAUPT-MODAL (DATEN-EINGABE) ---
 class MemberInfoModal(discord.ui.Modal, title='Mitglied Details'):
     def __init__(self, char_class, char_spec):
         super().__init__()
         self.char_class = char_class
         self.char_spec = char_spec
 
-    # HIER IST DER NEUE PLATZHALTER
-    discord_search = discord.ui.TextInput(
-        label='Discord User Suche', 
-        placeholder='Discord ID' 
-    )
-    ingame_name = discord.ui.TextInput(label='Ingame Charakter Name', placeholder='z.B. Bolontíku')
+    rio_link = discord.ui.TextInput(label='Raider.io Link (Optional)', placeholder='Einfügen für Auto-Fill von Name/Server', required=False)
+    discord_search = discord.ui.TextInput(label='Discord User Suche', placeholder='Discord ID')
+    ingame_name = discord.ui.TextInput(label='Char Name (falls kein Link)', required=False)
     real_name = discord.ui.TextInput(label='Vorname')
-    server_name = discord.ui.TextInput(label='Server', default=DEFAULT_SERVER_NAME)
+    server_name = discord.ui.TextInput(label='Server', default=DEFAULT_SERVER_NAME, required=False)
 
     async def on_submit(self, interaction: discord.Interaction):
+        # --- AUTO-FILL LOGIK ---
+        final_char = self.ingame_name.value
+        final_server = self.server_name.value
+        
+        if self.rio_link.value:
+            # Extrahiert Name und Server aus: https://raider.io/characters/eu/blackhand/bolontiku
+            match = re.search(r'characters/eu/([^/]+)/([^/]+)', self.rio_link.value.lower())
+            if match:
+                final_server = match.group(1).capitalize().replace("-", " ")
+                final_char = match.group(2).capitalize()
+
+        if not final_char:
+            return await interaction.response.send_message("Fehler: Kein Name gefunden (Link oder Textfeld nutzen).", ephemeral=True)
+
         # 1. User finden
         raw_input = self.discord_search.value.strip()
-        user_id_str = raw_input.replace("<@", "").replace("!", "").replace(">", "").replace("&", "")
-        member = None
-        if user_id_str.isdigit(): member = interaction.guild.get_member(int(user_id_str))
-        if not member: member = discord.utils.get(interaction.guild.members, display_name=raw_input)
-        if not member: member = discord.utils.get(interaction.guild.members, name=raw_input)
+        user_id = raw_input.replace("<@", "").replace("!", "").replace(">", "").replace("&", "")
+        member = interaction.guild.get_member(int(user_id)) if user_id.isdigit() else discord.utils.get(interaction.guild.members, display_name=raw_input)
 
-        # 2. Forum Thread erstellen
-        srv_slug = self.server_name.value.replace(" ", "-").lower()
-        log_url = f"https://www.warcraftlogs.com/character/{REGION}/{srv_slug}/{self.ingame_name.value.lower()}"
-        thread_name = f"[{self.char_class}] {self.ingame_name.value} | {self.real_name.value}"
+        # 2. Links & Thread
+        srv_slug = final_server.replace(" ", "-").lower()
+        wcl_url = f"https://www.warcraftlogs.com/character/{REGION}/{srv_slug}/{final_char.lower()}"
+        rio_url = f"https://raider.io/characters/{REGION}/{srv_slug}/{final_char.lower()}"
         
         forum_channel = interaction.guild.get_channel(FORUM_CHANNEL_ID)
         if forum_channel:
             res = await forum_channel.create_thread(
-                name=thread_name,
-                content=f"### 🛡️ Neuer Eintrag: {self.ingame_name.value}\n**Klasse:** {self.char_class} ({self.char_spec})\n**Spieler:** {self.real_name.value}\n📈 [Logs]({log_url})"
+                name=f"[{self.char_class}] {final_char} | {self.real_name.value}",
+                content=f"### 🛡️ Neuer Eintrag: {final_char}\n**Klasse:** {self.char_class} ({self.char_spec})\n"
+                        f"**Spieler:** {self.real_name.value} | **Server:** {final_server}\n\n"
+                        f"📈 **Profile:**\n• [Warcraft Logs]({wcl_url})\n• [Raider.io]({rio_url})"
             )
             
-            # 3. Rollen & Nickname
-            status = ""
             if member:
-                view = ThreadActionView(member_id=member.id)
-                await res.thread.send("💡 **Entscheidung treffen:**", view=view)
+                await res.thread.send("💡 **Entscheidung treffen:**", view=ThreadActionView(member.id))
                 try:
-                    await member.edit(nick=f"{self.ingame_name.value} | {self.real_name.value}")
-                    
-                    c_role = discord.utils.get(interaction.guild.roles, name=self.char_class)
-                    b_role = interaction.guild.get_role(BEWERBER_ROLLE_ID)
-                    g_role = interaction.guild.get_role(GAST_ROLLE_ID)
-                    
-                    if g_role: await member.remove_roles(g_role) # Gast entfernen
+                    await member.edit(nick=f"{final_char} | {self.real_name.value}")
+                    c_role, b_role, g_role = discord.utils.get(interaction.guild.roles, name=self.char_class), interaction.guild.get_role(BEWERBER_ROLLE_ID), interaction.guild.get_role(GAST_ROLLE_ID)
+                    if g_role: await member.remove_roles(g_role)
                     if c_role: await member.add_roles(c_role)
                     if b_role: await member.add_roles(b_role)
-                    
-                    status = f"✅ {member.mention} ist nun Bewerber (Gast entfernt)."
-                except: 
-                    status = "⚠️ Rollen-Update fehlgeschlagen."
-            else: 
-                status = "⚠️ User nicht gefunden."
+                except: pass
+            await interaction.response.send_message("Eintrag erstellt!", ephemeral=True)
 
-            await interaction.response.send_message(f"Eintrag erstellt!\n{status}", ephemeral=True)
-
-# --- KLASSEN WAHL ---
 class SpecSelect(discord.ui.Select):
     def __init__(self, char_class):
         self.char_class = char_class
-        options = [discord.SelectOption(label=s) for s in WOW_DATA[char_class]]
-        super().__init__(placeholder="Spezialisierung wählen...", options=options)
-
+        super().__init__(placeholder="Spezialisierung wählen...", options=[discord.SelectOption(label=s) for s in WOW_DATA[char_class]])
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.send_modal(MemberInfoModal(self.char_class, self.values[0]))
         await interaction.message.delete()
@@ -157,12 +148,9 @@ class GildenLeitungView(discord.ui.View):
             view.add_item(select)
             await interaction.response.send_message("Wähle die Klasse:", view=view, ephemeral=True)
 
-# --- BOT START ---
 class GildenBot(commands.Bot):
     def __init__(self):
-        intents = discord.Intents.default()
-        intents.message_content = True
-        intents.members = True
+        intents = discord.Intents.default(); intents.message_content = True; intents.members = True
         super().__init__(command_prefix="!", intents=intents)
     async def setup_hook(self): self.add_view(GildenLeitungView())
 
