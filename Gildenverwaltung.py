@@ -104,9 +104,8 @@ class SuperQuickModal(discord.ui.Modal, title='Schnell-Registrierung'):
     real_name = discord.ui.TextInput(label='Vorname des Spielers', required=True)
 
     async def on_submit(self, interaction: discord.Interaction):
-        # 1. Aufforderung zum Pingen
-        prompt = await interaction.response.send_message(
-            f"✅ Daten empfangen! Bitte **erwähne (@Name)** jetzt den Discord-User oder schreibe seine ID in diesen Chat.",
+        await interaction.response.send_message(
+            f"✅ Daten empfangen! Bitte **erwähne (@Name)** jetzt den Discord-User in diesem Chat.",
             ephemeral=True
         )
 
@@ -114,55 +113,60 @@ class SuperQuickModal(discord.ui.Modal, title='Schnell-Registrierung'):
             return m.author == interaction.user and m.channel == interaction.channel
 
         try:
-            # 2. Auf die Nachricht warten (Timeout nach 60 Sek)
             msg = await interaction.client.wait_for('message', check=check, timeout=60.0)
             raw_id = msg.content.replace("<@", "").replace("!", "").replace(">", "").replace("&", "")
-            
             target_member = interaction.guild.get_member(int(raw_id)) if raw_id.isdigit() else None
             
             if not target_member:
-                return await interaction.followup.send("❌ User nicht gefunden. Vorgang abgebrochen.", ephemeral=True)
+                return await interaction.followup.send("❌ User nicht gefunden.", ephemeral=True)
 
-            # 3. API Abfrage & Forum
-            await interaction.followup.send(f"⏳ Verarbeite {target_member.display_name}...", ephemeral=True)
-            
+            # API Abfrage
             match = re.search(r'characters/eu/([^/]+)/([^/]+)', self.rio_link.value.lower())
             if not match: return await interaction.followup.send("❌ Link ungültig!", ephemeral=True)
             
             srv, name = match.group(1), match.group(2)
+            api_url = f"https://raider.io/api/v1/characters/profile?region=eu&realm={srv}&name={name}&fields=gear"
+            
             async with aiohttp.ClientSession() as session:
-                async with session.get(f"https://raider.io/api/v1/characters/profile?region=eu&realm={srv}&name={name}&fields=gear") as resp:
+                async with session.get(api_url) as resp:
                     if resp.status != 200: return await interaction.followup.send("❌ Charakter nicht gefunden!", ephemeral=True)
                     data = await resp.json()
 
+            char_class = data['class']
+            char_name = data['name']
+            wcl_url = f"https://www.warcraftlogs.com/character/{REGION}/{srv}/{name}"
+
             forum = interaction.guild.get_channel(FORUM_CHANNEL_ID)
             if forum:
-                char_class = data['class']
-                char_name = data['name']
                 res = await forum.create_thread(
                     name=f"[{char_class}] {char_name} | {self.real_name.value}",
-                    content=f"### 🛡️ Neuer Eintrag: {char_name}\n**Klasse:** {char_class}\n**Spieler:** {self.real_name.value}\n• [Rio]({self.rio_link.value})"
+                    content=f"### 🛡️ Neuer Eintrag: {char_name}\n"
+                            f"**Klasse:** {char_class}\n"
+                            f"**Spieler:** {self.real_name.value}\n\n"
+                            f"📈 **Profile:**\n"
+                            f"• [Warcraft Logs]({wcl_url})\n"
+                            f"• [Raider.io]({self.rio_link.value})"
                 )
                 
                 try:
                     await target_member.edit(nick=f"{char_name} | {self.real_name.value}")
                     c_role = discord.utils.get(interaction.guild.roles, name=char_class)
-                    b_role, g_role = interaction.guild.get_role(BEWERBER_ROLLE_ID), interaction.guild.get_role(GAST_ROLLE_ID)
+                    b_role = interaction.guild.get_role(BEWERBER_ROLLE_ID)
+                    g_role = interaction.guild.get_role(GAST_ROLLE_ID)
                     if c_role: await target_member.add_roles(c_role)
                     if b_role: await target_member.add_roles(b_role)
                     if g_role: await target_member.remove_roles(g_role)
+                    
                     await res.thread.send(f"💡 Entscheidung für {target_member.mention}:", view=ThreadActionView(target_member.id))
                 except: pass
                 
-                # Ping-Nachricht zur Sauberkeit löschen
                 try: await msg.delete() 
                 except: pass
 
-            await interaction.followup.send(f"✅ Eintrag für {char_name} erfolgreich erstellt!", ephemeral=True)
+            await interaction.followup.send(f"✅ Eintrag für {char_name} erstellt!", ephemeral=True)
 
         except asyncio.TimeoutError:
-            await interaction.followup.send("❌ Zeit abgelaufen (60s). Bitte versuch es erneut.", ephemeral=True)
-
+            await interaction.followup.send("❌ Zeit abgelaufen.", ephemeral=True)
 # --- BOT SETUP ---
 
 class GildenLeitungView(discord.ui.View):
