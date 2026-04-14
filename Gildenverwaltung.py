@@ -62,7 +62,7 @@ class ThreadActionView(discord.ui.View):
 class SuperQuickModal(discord.ui.Modal, title='Schnell-Registrierung'):
     rio_link = discord.ui.TextInput(label='Raider.io Link', placeholder='Link hier einfügen...', required=True)
     discord_search = discord.ui.TextInput(label='Discord User', placeholder='Discord ID oder Name', required=True)
-    real_name = discord.ui.TextInput(label='Vorname des Spielers', placeholder='z.B. Rene', required=True)
+    real_name = discord.ui.TextInput(label='Vorname des Spielers', placeholder='z.B. Alex', required=True)
 
     async def on_submit(self, interaction: discord.Interaction):
         # Zeige dem User, dass der Bot arbeitet (API Abfrage kann 1-2 Sek dauern)
