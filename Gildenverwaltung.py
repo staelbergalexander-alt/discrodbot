@@ -14,6 +14,7 @@ MITGLIED_ROLLE_ID = int(os.getenv('MITGLIED_ROLLE_ID') or 0)
 BEWERBER_ROLLE_ID = int(os.getenv('BEWERBER_ROLLE_ID') or 0)
 GAST_ROLLE_ID = int(os.getenv('GAST_ROLLE_ID') or 0)
 SERVER_ID = int(os.getenv('SERVER_ID') or 0)
+DB_FILE = "mitglieder_db.json"
 REGION = "eu"
 
 # --- DATENBANK FUNKTIONEN (Müssen oben stehen!) ---
