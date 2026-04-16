@@ -13,6 +13,7 @@ OFFIZIER_ROLLE_ID = int(os.getenv('OFFIZIER_ROLLE_ID') or 0)
 FORUM_CHANNEL_ID = int(os.getenv('FORUM_CHANNEL_ID') or 0)
 MITGLIED_ROLLE_ID = int(os.getenv('MITGLIED_ROLLE_ID') or 0)
 BEWERBER_ROLLE_ID = int(os.getenv('BEWERBER_ROLLE_ID') or 0)
+RAID_READY_ROLLE_ID = int(os.getenv('RAID_READY_ROLLE_ID') or 0)
 GAST_ROLLE_ID = int(os.getenv('GAST_ROLLE_ID') or 0)
 SERVER_ID = int(os.getenv('SERVER_ID') or 0)
 DB_FILE = "mitglieder_db.json"
@@ -332,32 +333,53 @@ async def remove_member(interaction: discord.Interaction, user: discord.Member):
             ephemeral=True
         )
         
-@bot.tree.command(name="check_raid_ready", description="Prüft Itemlevel, VZ und Gems")
+@bot.tree.command(name="check_raid_ready", description="Prüft Gear und vergibt automatisch die Raid-Ready Rolle")
 async def check_raid_ready(interaction: discord.Interaction, min_ilvl: int = 270):
     await interaction.response.defer()
+    
     db = load_db()
-    ready, not_ready, missing = [], [], []
+    ready_list, not_ready_list = [], []
+    rr_role = interaction.guild.get_role(RAID_READY_ROLLE_ID)
+    
+    if not rr_role:
+        return await interaction.followup.send("⚠️ Fehler: Raid-Ready Rolle wurde nicht gefunden. Prüfe die ID!")
 
     async with aiohttp.ClientSession() as session:
-        for user_id, info in db.items():
+        for uid, info in db.items():
+            member = interaction.guild.get_member(int(uid))
+            if not member: continue
+
             res = await fetch_gear_data(session, info['realm'], info['name'])
             if res:
-                warnings = []
-                if res['empty_sockets'] > 0: warnings.append(f"💎 {res['empty_sockets']} Gems")
+                warns = []
+                if res['missing_enchant']: warns.append("✨ VZ")
+                if res['empty_sockets'] > 0: warns.append(f"💎 {res['empty_sockets']} Gems")
                 
-                warn_text = f" ({', '.join(warnings)})" if warnings else ""
-                line = f"<@{user_id}>: **{res['ilvl']}**{warn_text}"
-                
-                if res['ilvl'] >= min_ilvl and not warnings: ready.append(f"✅ {line}")
-                else: not_ready.append(f"⚠️ {line}" if res['ilvl'] >= min_ilvl else f"❌ {line}")
-            else:
-                missing.append(f"<@{user_id}> ({info['name']}?)")
-            await asyncio.sleep(0.1)
+                is_ready = (res['ilvl'] >= min_ilvl and not warns)
+                txt = f"<@{uid}>: **{res['ilvl']}**" + (f" ({', '.join(warns)} fehlt!)" if warns else "")
 
-    embed = discord.Embed(title=f"🛡️ Raid-Ready Check (Min: {min_ilvl})", color=discord.Color.blue())
-    embed.add_field(name="✅ Ready", value="\n".join(ready) or "Niemand", inline=False)
-    embed.add_field(name="❌ Baustellen", value="\n".join(not_ready) or "Niemand", inline=False)
-    if missing: embed.add_field(name="⚠️ Fehler", value="\n".join(missing), inline=False)
+                try:
+                    if is_ready:
+                        ready_list.append(f"✅ {txt}")
+                        if rr_role not in member.roles:
+                            await member.add_roles(rr_role)
+                    else:
+                        not_ready_list.append(f"❌ {txt}")
+                        if rr_role in member.roles:
+                            await member.remove_roles(rr_role)
+                except Exception as e:
+                    print(f"Rollen-Fehler bei {member.display_name}: {e}")
+
+            await asyncio.sleep(0.1) # Kurze Pause gegen API-Limits
+
+    embed = discord.Embed(
+        title="🛡️ Raid-Ready Status & Rollen-Update", 
+        description=f"Geprüftes Itemlevel: **{min_ilvl}+**",
+        color=discord.Color.blue()
+    )
+    embed.add_field(name="✅ Ready (Rolle vergeben)", value="\n".join(ready_list) or "Niemand", inline=False)
+    embed.add_field(name="❌ Nachbessern (Rolle entzogen)", value="\n".join(not_ready_list) or "Niemand", inline=False)
+    
     await interaction.followup.send(embed=embed)
-
-bot.run(os.getenv('DISCORD_TOKEN'))
+    
+    bot.run(os.getenv('DISCORD_TOKEN'))
