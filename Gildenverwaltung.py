@@ -262,11 +262,19 @@ class GildenBot(commands.Bot):
         intents.message_content = True
         intents.members = True
         super().__init__(command_prefix="!", intents=intents)
-        self.archive_logs.start()
-    
+        # HIER DARF NICHTS MIT .start() STEHEN!
+
     async def setup_hook(self):
+        # 1. Deine Views registrieren
         self.add_view(GildenLeitungView())
         self.add_view(RaidPollView())
+        
+        # 2. Den Task starten (HIER ist es sicher!)
+        if not self.archive_logs.is_running():
+            self.archive_logs.start()
+            print("Archiv-Task wurde erfolgreich gestartet.")
+            
+        # 3. Slash Commands synchronisieren
         if SERVER_ID != 0:
             MY_GUILD = discord.Object(id=SERVER_ID)
             self.tree.copy_global_to(guild=MY_GUILD)
