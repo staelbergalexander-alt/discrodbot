@@ -260,7 +260,6 @@ async def check_raid_ready(interaction: discord.Interaction, min_ilvl: int = 270
             res = await fetch_gear_data(session, info['realm'], info['name'])
             if res:
                 warnings = []
-                if res['missing_enchant']: warnings.append("✨ VZ fehlt")
                 if res['empty_sockets'] > 0: warnings.append(f"💎 {res['empty_sockets']} Gems")
                 
                 warn_text = f" ({', '.join(warnings)})" if warnings else ""
