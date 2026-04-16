@@ -159,8 +159,11 @@ class SuperQuickModal(discord.ui.Modal, title='Schnell-Registrierung'):
             if not target_member: return await interaction.followup.send("❌ User nicht gefunden.", ephemeral=True)
             match = re.search(r'characters/eu/([^/]+)/([^/]+)', self.rio_link.value.lower())
             if not match: return await interaction.followup.send("❌ Link ungültig!", ephemeral=True)
+                
+            db = load_db()
+            db[str(target_member.id)] = {"name": name, "realm": srv}
+            save_db(db)
             
-            srv, name = match.group(1), match.group(2)
             api_url = f"https://raider.io/api/v1/characters/profile?region=eu&realm={srv}&name={name}&fields=gear"
             async with aiohttp.ClientSession() as session:
                 async with session.get(api_url) as resp:
