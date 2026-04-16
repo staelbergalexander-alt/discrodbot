@@ -18,14 +18,12 @@ SERVER_ID = int(os.getenv('SERVER_ID') or 0)
 DB_FILE = "mitglieder_db.json"
 REGION = "eu"
 
-# --- DATENBANK FUNKTIONEN (Müssen oben stehen!) ---
+# --- DATENBANK FUNKTIONEN ---
 def load_db():
     if os.path.exists(DB_FILE):
         with open(DB_FILE, "r") as f: 
-            try:
-                return json.load(f)
-            except:
-                return {}
+            try: return json.load(f)
+            except: return {}
     return {}
 
 def save_db(data):
@@ -40,6 +38,30 @@ def get_raid_week_dates():
     following_wednesday = next_thursday + timedelta(days=6)
     return next_thursday.strftime("%d.%m."), following_wednesday.strftime("%d.%m.")
 
+# --- GEAR CHECK LOGIK ---
+async def fetch_gear_data(session, realm, name):
+    url = f"https://raider.io/api/v1/characters/profile?region=eu&realm={realm}&name={name}&fields=gear"
+    async with session.get(url) as resp:
+        if resp.status != 200: return None
+        data = await resp.json()
+        items = data.get('gear', {}).get('items', {})
+        ilvl = data.get('gear', {}).get('item_level_equipped', 0)
+        
+        missing_enchant = False
+        empty_sockets = 0
+        enchantable_slots = ['neck', 'back', 'chest', 'bracers', 'cloak', 'legs', 'boots', 'mainhand', 'offhand', 'finger1', 'finger2']
+        
+        for slot, info in items.items():
+            if slot in enchantable_slots and info.get('enchant') is None:
+                missing_enchant = True
+            empty_sockets += info.get('gems_missing', 0)
+            
+        return {
+            "ilvl": ilvl,
+            "missing_enchant": missing_enchant,
+            "empty_sockets": empty_sockets
+        }
+
 # --- VIEWS ---
 class RaidPollView(discord.ui.View):
     def __init__(self):
@@ -52,10 +74,8 @@ class RaidPollView(discord.ui.View):
         user_mention = interaction.user.mention
         current_voters = field.value.split(", ") if field.value != "Keine Stimmen" else []
         
-        if user_mention in current_voters:
-            current_voters.remove(user_mention)
-        else:
-            current_voters.append(user_mention)
+        if user_mention in current_voters: current_voters.remove(user_mention)
+        else: current_voters.append(user_mention)
         
         new_value = ", ".join(current_voters) if current_voters else "Keine Stimmen"
         embed.set_field_at(day_index, name=f"{self.days_order[day_index]} ({len(current_voters)})", value=new_value, inline=False)
@@ -85,8 +105,7 @@ class RejectModal(discord.ui.Modal, title='Ablehnung begründen'):
     async def on_submit(self, interaction: discord.Interaction):
         member = interaction.guild.get_member(self.member_id)
         if member:
-            b_role = interaction.guild.get_role(BEWERBER_ROLLE_ID)
-            g_role = interaction.guild.get_role(GAST_ROLLE_ID)
+            b_role, g_role = interaction.guild.get_role(BEWERBER_ROLLE_ID), interaction.guild.get_role(GAST_ROLLE_ID)
             try:
                 if b_role: await member.remove_roles(b_role)
                 if g_role: await member.add_roles(g_role)
@@ -105,8 +124,7 @@ class ThreadActionView(discord.ui.View):
         member = interaction.guild.get_member(self.member_id)
         if member:
             try:
-                m_role = interaction.guild.get_role(MITGLIED_ROLLE_ID)
-                b_role = interaction.guild.get_role(BEWERBER_ROLLE_ID)
+                m_role, b_role = interaction.guild.get_role(MITGLIED_ROLLE_ID), interaction.guild.get_role(BEWERBER_ROLLE_ID)
                 if m_role: await member.add_roles(m_role)
                 if b_role: await member.remove_roles(b_role)
                 await interaction.response.send_message(f"✅ {member.mention} aufgenommen!")
@@ -176,11 +194,10 @@ class GildenBot(commands.Bot):
             MY_GUILD = discord.Object(id=SERVER_ID)
             self.tree.copy_global_to(guild=MY_GUILD)
             await self.tree.sync(guild=MY_GUILD)
-            print(f"Befehle für Server {SERVER_ID} synchronisiert.")
 
-# --- BOT INSTANZ & BEFEHLE ---
 bot = GildenBot()
 
+# --- BEFEHLE ---
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def sync(ctx):
@@ -202,38 +219,26 @@ async def raidumfrage(ctx):
     await ctx.send(embed=embed, view=RaidPollView())
 
 @bot.tree.command(name="add_member_rio", description="Füge ein Mitglied per Raider.io Link hinzu")
-@app_commands.describe(user="Der Discord-User", rio_link="Der vollständige Raider.io Link")
 async def add_member_rio(interaction: discord.Interaction, user: discord.Member, rio_link: str):
     if not any(role.id == OFFIZIER_ROLLE_ID for role in interaction.user.roles):
         return await interaction.response.send_message("❌ Keine Rechte!", ephemeral=True)
-
-    # Regex um Name und Server aus dem Link zu fischen
-    # Beispiel-Link: https://raider.io/characters/eu/blackrock/Charname
     match = re.search(r"characters/eu/([^/]+)/([^/?#\s]+)", rio_link.lower())
+    if not match: return await interaction.response.send_message("❌ Ungültiger Link!", ephemeral=True)
     
-    if not match:
-        return await interaction.response.send_message("❌ Ungültiger Link! Der Link muss von Raider.io (EU) sein.", ephemeral=True)
-
-    server = match.group(1).capitalize()
-    charname = match.group(2).capitalize()
-
+    server, charname = match.group(1).capitalize(), match.group(2).capitalize()
     db = load_db()
     db[str(user.id)] = {"name": charname, "realm": server}
     save_db(db)
-    
     await interaction.response.send_message(f"✅ Verknüpft: {user.mention} ↔️ **{charname}** ({server})")
 
 @bot.tree.command(name="list_members", description="Zeigt alle registrierten Mitglieder")
 async def list_members(interaction: discord.Interaction):
     db = load_db()
-    if not db:
-        return await interaction.response.send_message("Die Liste ist leer.", ephemeral=True)
-    
+    if not db: return await interaction.response.send_message("Die Liste ist leer.", ephemeral=True)
     liste = [f"• <@{uid}>: **{info['name']}** ({info['realm']})" for uid, info in db.items()]
-    embed = discord.Embed(title="Registrierte Mitglieder", description="\n".join(liste), color=discord.Color.gold())
-    await interaction.response.send_message(embed=embed)
+    await interaction.response.send_message(embed=discord.Embed(title="Mitglieder", description="\n".join(liste), color=discord.Color.gold()))
 
-@bot.tree.command(name="check_raid_ready", description="Prüft Gear-Stand der registrierten Mitglieder")
+@bot.tree.command(name="check_raid_ready", description="Prüft Itemlevel, VZ und Gems")
 async def check_raid_ready(interaction: discord.Interaction, min_ilvl: int = 270):
     await interaction.response.defer()
     db = load_db()
@@ -241,29 +246,25 @@ async def check_raid_ready(interaction: discord.Interaction, min_ilvl: int = 270
 
     async with aiohttp.ClientSession() as session:
         for user_id, info in db.items():
-            member = interaction.guild.get_member(int(user_id))
-            if not member: continue 
-
-            name, realm = info["name"], info["realm"]
-            url = f"https://raider.io/api/v1/characters/profile?region=eu&realm={realm}&name={name}&fields=gear"
-            
-            async with session.get(url) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    ilvl = data['gear']['item_level_equipped']
-                    line = f"<@{user_id}> ({name}): **{ilvl}**"
-                    if ilvl >= min_ilvl: ready.append(line)
-                    else: not_ready.append(line)
-                else:
-                    missing.append(f"<@{user_id}> ({name} nicht gefunden)")
+            res = await fetch_gear_data(session, info['realm'], info['name'])
+            if res:
+                warnings = []
+                if res['missing_enchant']: warnings.append("✨ VZ fehlt")
+                if res['empty_sockets'] > 0: warnings.append(f"💎 {res['empty_sockets']} Gems")
+                
+                warn_text = f" ({', '.join(warnings)})" if warnings else ""
+                line = f"<@{user_id}>: **{res['ilvl']}**{warn_text}"
+                
+                if res['ilvl'] >= min_ilvl and not warnings: ready.append(f"✅ {line}")
+                else: not_ready.append(f"⚠️ {line}" if res['ilvl'] >= min_ilvl else f"❌ {line}")
+            else:
+                missing.append(f"<@{user_id}> ({info['name']}?)")
             await asyncio.sleep(0.1)
 
     embed = discord.Embed(title=f"🛡️ Raid-Ready Check (Min: {min_ilvl})", color=discord.Color.blue())
     embed.add_field(name="✅ Ready", value="\n".join(ready) or "Niemand", inline=False)
-    embed.add_field(name="❌ Zu niedrig", value="\n".join(not_ready) or "Niemand", inline=False)
-    if missing:
-        embed.add_field(name="⚠️ Fehler", value="\n".join(missing), inline=False)
-    
+    embed.add_field(name="❌ Baustellen", value="\n".join(not_ready) or "Niemand", inline=False)
+    if missing: embed.add_field(name="⚠️ Fehler", value="\n".join(missing), inline=False)
     await interaction.followup.send(embed=embed)
 
 bot.run(os.getenv('DISCORD_TOKEN'))
