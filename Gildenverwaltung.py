@@ -204,7 +204,7 @@ class GildenBot(commands.Bot):
     @app_commands.command(name="check_raid_ready", description="Prüft Gear-Stand aller Mitglieder & Bewerber")
     async def check_raid_ready(self, interaction: discord.Interaction, min_ilvl: int = 270):
         if not any(role.id == OFFIZIER_ROLLE_ID for role in interaction.user.roles):
-            return await interaction.response.send_message("Keine Rechte!", ephemeral=True)
+            return await interaction.response.send_message("Keine Rechte!", ephemeral=False)
 
         await interaction.response.defer(ephemeral=True)
         
