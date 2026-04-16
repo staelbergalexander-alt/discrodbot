@@ -194,6 +194,7 @@ class GildenBot(commands.Bot):
     async def setup_hook(self):
         self.add_view(GildenLeitungView())
         self.add_view(RaidPollView())
+        await self.tree.sync()
 
 
 
