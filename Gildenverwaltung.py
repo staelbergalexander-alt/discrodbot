@@ -6,6 +6,7 @@ import json
 import asyncio
 import re
 import aiohttp
+from discord.ext import tasks
 from datetime import datetime, timedelta
 
 # --- KONFIGURATION (Railway Variablen) ---
@@ -15,6 +16,9 @@ MITGLIED_ROLLE_ID = int(os.getenv('MITGLIED_ROLLE_ID') or 0)
 BEWERBER_ROLLE_ID = int(os.getenv('BEWERBER_ROLLE_ID') or 0)
 RAID_READY_ROLLE_ID = int(os.getenv('RAID_READY_ROLLE_ID') or 0)
 GAST_ROLLE_ID = int(os.getenv('GAST_ROLLE_ID') or 0)
+LOG_CHANNEL_ID = int(os.getenv('LOG_CHANNEL_ID') or 0) # Wo die Logs gepostet werden
+ARCHIV_CHANNEL_ID = int(os.getenv('ARCHIV_CHANNEL_ID') or 0) # Das Archiv
+PLANUNGS_CHANNEL_ID = int(os.getenv('PLANUNGS_CHANNEL_ID') or 0)
 SERVER_ID = int(os.getenv('SERVER_ID') or 0)
 DB_FILE = "mitglieder_db.json"
 REGION = "eu"
@@ -258,6 +262,7 @@ class GildenBot(commands.Bot):
         intents.message_content = True
         intents.members = True
         super().__init__(command_prefix="!", intents=intents)
+        self.archive_task.start()
     
     async def setup_hook(self):
         self.add_view(GildenLeitungView())
@@ -267,7 +272,47 @@ class GildenBot(commands.Bot):
             self.tree.copy_global_to(guild=MY_GUILD)
             await self.tree.sync(guild=MY_GUILD)
 
+@tasks.loop(hours=6) # Prüft alle 6 Stunden
+    async def auto_archive_logs(self):
+        guild = self.get_guild(SERVER_ID)
+        if not guild: return
+        
+        log_channel = guild.get_channel(LOG_CHANNEL_ID)
+        archiv_channel = guild.get_channel(ARCHIV_CHANNEL_ID)
+        if not log_channel or not archiv_channel: return
+
+        cutoff = datetime.now(datetime.now().astimezone().tzinfo) - timedelta(hours=12)
+        log_pattern = re.compile(r"https:\/\/(www\.)?warcraftlogs\.com\/reports\/[a-zA-Z0-9]+")
+
+        async for message in log_channel.history(limit=50):
+            # Wenn Nachricht älter als 12h ist UND einen Log-Link enthält
+            if message.created_at < cutoff and log_pattern.search(message.content):
+                ts = message.created_at.strftime("%d.%m.%Y")
+                content = f"**Raid-Log vom {ts}** (Archiv):\n{message.content}"
+                await archiv_channel.send(content)
+                await message.delete()
+                await asyncio.sleep(1)
+
 bot = GildenBot()
+
+@bot.tree.command(name="archive_logs", description="Verschiebt Logs manuell ins Archiv")
+async def archive_logs(interaction: discord.Interaction):
+    if not any(role.id == OFFIZIER_ROLLE_ID for role in interaction.user.roles):
+        return await interaction.response.send_message("Keine Rechte!", ephemeral=True)
+    
+    await interaction.response.send_message("Suche nach Logs zum Verschieben...", ephemeral=True)
+    log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
+    archiv_channel = interaction.guild.get_channel(ARCHIV_CHANNEL_ID)
+    
+    moved = 0
+    log_pattern = re.compile(r"https:\/\/(www\.)?warcraftlogs\.com\/reports\/[a-zA-Z0-9]+")
+    
+    async for msg in log_channel.history(limit=100):
+        if log_pattern.search(msg.content):
+            await archiv_channel.send(f"**Manueller Archiv-Eintrag ({msg.created_at.strftime('%d.%m.')}):**\n{msg.content}")
+            await msg.delete()
+            moved += 1
+    await interaction.followup.send(f"✅ {moved} Logs verschoben.")
 
 # --- BEFEHLE ---
 @bot.command()
