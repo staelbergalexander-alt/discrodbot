@@ -190,21 +190,18 @@ class GildenBot(commands.Bot):
         intents.members = True
         super().__init__(command_prefix="!", intents=intents)
     
-async def setup_hook(self):
+    async def setup_hook(self):
         self.add_view(GildenLeitungView())
         self.add_view(RaidPollView())
         
-        # Ersetze 1234567890 durch deine echte Server-ID:
+        # Sofortiger Sync für deinen Server
         MY_GUILD = discord.Object(id=SERVER_ID) 
-        
-        # Kopiert die Befehle direkt in deinen Server (geht sofort!)
         self.tree.copy_global_to(guild=MY_GUILD)
         await self.tree.sync(guild=MY_GUILD)
-        
         print(f"Befehle für Server {MY_GUILD.id} synchronisiert.")
 
-    # --- RAID READY COMMAND (INNERHALB DER KLASSE) ---
-@app_commands.command(name="check_raid_ready", description="Prüft Gear-Stand aller Mitglieder & Bewerber")
+    # --- RAID READY COMMAND (MUSS EINGERÜCKT SEIN) ---
+    @app_commands.command(name="check_raid_ready", description="Prüft Gear-Stand aller Mitglieder & Bewerber")
     async def check_raid_ready(self, interaction: discord.Interaction, min_ilvl: int = 270):
         if not any(role.id == OFFIZIER_ROLLE_ID for role in interaction.user.roles):
             return await interaction.response.send_message("Keine Rechte!", ephemeral=True)
