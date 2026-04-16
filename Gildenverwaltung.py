@@ -145,12 +145,16 @@ class ThreadActionView(discord.ui.View):
         await interaction.response.send_modal(RejectModal(self.member_id))
 
 class SuperQuickModal(discord.ui.Modal, title='Schnell-Registrierung'):
-    rio_link = discord.ui.TextInput(label='Raider.io Link', required=True)
-    real_name = discord.ui.TextInput(label='Vorname des Spielers', required=True)
+    rio_link = discord.ui.TextInput(label='Raider.io Link', placeholder="https://raider.io/characters/eu/...", required=True)
+    wcl_link = discord.ui.TextInput(label='Warcraft Logs Link', placeholder="https://www.warcraftlogs.com/character/eu/...", required=False)
+    real_name = discord.ui.TextInput(label='Vorname des Spielers', placeholder="z.B. Max", required=True)
 
     async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.send_message("✅ Daten empfangen! Erwähne (@Name) jetzt den User.", ephemeral=True)
-        def check(m): return m.author == interaction.user and m.channel == interaction.channel
+        await interaction.response.send_message("✅ Daten empfangen! Erwähne (@Name) jetzt den User im Chat.", ephemeral=True)
+        
+        def check(m): 
+            return m.author == interaction.user and m.channel == interaction.channel
+            
         try:
             msg = await interaction.client.wait_for('message', check=check, timeout=60.0)
             raw_id = msg.content.replace("<@", "").replace("!", "").replace(">", "").replace("&", "")
@@ -159,42 +163,57 @@ class SuperQuickModal(discord.ui.Modal, title='Schnell-Registrierung'):
             if not target_member: 
                 return await interaction.followup.send("❌ User nicht gefunden.", ephemeral=True)
             
-            # Link parsen
+            # --- ROLLENVERGABE ---
+            b_role = interaction.guild.get_role(BEWERBER_ROLLE_ID)
+            if b_role:
+                try:
+                    await target_member.add_roles(b_role)
+                except:
+                    print(f"Konnte Rolle an {target_member.display_name} nicht vergeben (Rechte?)")
+            
+            # Link parsen & Datenbank
             match = re.search(r'characters/eu/([^/]+)/([^/]+)', self.rio_link.value.lower())
             if not match: 
-                return await interaction.followup.send("❌ Link ungültig!", ephemeral=True)
+                return await interaction.followup.send("❌ Raider.io Link ungültig!", ephemeral=True)
             
-            # Hier waren die Definitionen wichtig:
-            srv = match.group(1).capitalize()
-            char_name = match.group(2).capitalize() # Variable eindeutig benannt
+            srv, char_name = match.group(1).capitalize(), match.group(2).capitalize()
+            heute = datetime.now().strftime("%d.%m.%Y")
 
-            # AUTO-SAVE IN DIE DATENBANK
             db = load_db()
             db[str(target_member.id)] = {"name": char_name, "realm": srv}
             save_db(db)
 
-            # API Abfrage für die Klasse (für den Forum-Thread)
+            # API & Forum
             api_url = f"https://raider.io/api/v1/characters/profile?region=eu&realm={srv}&name={char_name}&fields=gear"
             async with aiohttp.ClientSession() as session:
                 async with session.get(api_url) as resp:
+                    char_class = "Unbekannt"
                     if resp.status == 200:
                         data = await resp.json()
-                        char_class = data['class']
-                        forum = interaction.guild.get_channel(FORUM_CHANNEL_ID)
-                        if forum:
-                            res = await forum.create_thread(
-                                name=f"[{char_class}] {char_name} | {self.real_name.value}",
-                                content=f"### 🛡️ Neuer Eintrag: {char_name}\n**Klasse:** {char_class}\n**Spieler:** {self.real_name.value}\n[Raider.io]({self.rio_link.value})"
-                            )
-                            await res.thread.send(f"💡 Entscheidung für {target_member.mention}:", view=ThreadActionView(target_member.id))
-                            await target_member.edit(nick=f"{char_name} | {self.real_name.value}")
+                        char_class = data.get('class', "Unbekannt")
+
+                    forum = interaction.guild.get_channel(FORUM_CHANNEL_ID)
+                    if forum:
+                        wcl_text = f"[WarcraftLogs]({self.wcl_link.value})" if self.wcl_link.value else "Nicht angegeben"
+                        content_text = (
+                            f"### 🛡️ Neuer Eintrag: {char_name}\n"
+                            f"**Datum:** {heute}\n"
+                            f"**Klasse:** {char_class}\n"
+                            f"**Spieler:** {self.real_name.value}\n"
+                            f"**Links:** [Raider.io]({self.rio_link.value}) | {wcl_text}"
+                        )
+                        
+                        res = await forum.create_thread(
+                            name=f"[{char_class}] {char_name} | {self.real_name.value}",
+                            content=content_text
+                        )
+                        await res.thread.send(f"💡 Entscheidung für {target_member.mention}:", view=ThreadActionView(target_member.id))
+                        await target_member.edit(nick=f"{char_name} | {self.real_name.value}")
             
             await msg.delete()
-            await interaction.followup.send(f"✅ {char_name} registriert und im Forum erstellt!", ephemeral=True)
             
         except Exception as e: 
             await interaction.followup.send(f"Fehler: {e}", ephemeral=True)
-
 class GildenLeitungView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
     @discord.ui.button(label="Mitglied eintragen", style=discord.ButtonStyle.green, custom_id="add_btn")
