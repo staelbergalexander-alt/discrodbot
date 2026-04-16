@@ -261,7 +261,30 @@ async def list_members(interaction: discord.Interaction):
     if not db: return await interaction.response.send_message("Die Liste ist leer.", ephemeral=True)
     liste = [f"• <@{uid}>: **{info['name']}** ({info['realm']})" for uid, info in db.items()]
     await interaction.response.send_message(embed=discord.Embed(title="Mitglieder", description="\n".join(liste), color=discord.Color.gold()))
+    
+@bot.tree.command(name="remove_member", description="Löscht ein Mitglied aus der Raid-Datenbank")
+@app_commands.describe(user="Der Discord-User, der entfernt werden soll")
+async def remove_member(interaction: discord.Interaction, user: discord.Member):
+    # Prüfung auf Offizier-Rechte
+    if not any(role.id == OFFIZIER_ROLLE_ID for role in interaction.user.roles):
+        return await interaction.response.send_message("❌ Keine Rechte!", ephemeral=True)
 
+    db = load_db()
+    user_id_str = str(user.id)
+
+    if user_id_str in db:
+        char_info = db.pop(user_id_str)
+        save_db(db)
+        await interaction.response.send_message(
+            f"✅ **{char_info['name']}** (<@{user.id}>) wurde aus der Datenbank gelöscht.", 
+            ephemeral=False
+        )
+    else:
+        await interaction.response.send_message(
+            f"❌ Dieser User ist gar nicht in der Datenbank registriert.", 
+            ephemeral=True
+        )
+        
 @bot.tree.command(name="check_raid_ready", description="Prüft Itemlevel, VZ und Gems")
 async def check_raid_ready(interaction: discord.Interaction, min_ilvl: int = 270):
     await interaction.response.defer()
