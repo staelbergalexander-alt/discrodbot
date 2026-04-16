@@ -269,6 +269,11 @@ async def raidumfrage(ctx):
     for d in ["Donnerstag", "Freitag", "Samstag", "Sonntag", "Montag", "Dienstag", "Mittwoch"]:
         embed.add_field(name=f"{d} (0)", value="Keine Stimmen", inline=False)
     await ctx.send(embed=embed, view=RaidPollView())
-
+    
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def sync(ctx):
+    await bot.tree.sync(guild=discord.Object(id=SERVER_ID))
+    await ctx.send("Befehle wurden für diesen Server synchronisiert!")
 # Bot starten
 bot.run(os.getenv('DISCORD_TOKEN'))
