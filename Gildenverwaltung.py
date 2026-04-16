@@ -163,15 +163,15 @@ class SuperQuickModal(discord.ui.Modal, title='Schnell-Registrierung'):
             if not target_member: 
                 return await interaction.followup.send("❌ User nicht gefunden.", ephemeral=True)
             
-            # --- ROLLENVERGABE ---
+            # 1. Rollenvergabe (Bewerber)
             b_role = interaction.guild.get_role(BEWERBER_ROLLE_ID)
             if b_role:
                 try:
                     await target_member.add_roles(b_role)
                 except:
-                    print(f"Konnte Rolle an {target_member.display_name} nicht vergeben (Rechte?)")
-            
-            # Link parsen & Datenbank
+                    print(f"Konnte Rolle nicht vergeben - Bot-Position prüfen!")
+
+            # 2. Link parsen & Datenbank (Volume)
             match = re.search(r'characters/eu/([^/]+)/([^/]+)', self.rio_link.value.lower())
             if not match: 
                 return await interaction.followup.send("❌ Raider.io Link ungültig!", ephemeral=True)
@@ -183,7 +183,7 @@ class SuperQuickModal(discord.ui.Modal, title='Schnell-Registrierung'):
             db[str(target_member.id)] = {"name": char_name, "realm": srv}
             save_db(db)
 
-            # API & Forum
+            # 3. API & Forum-Thread erstellen
             api_url = f"https://raider.io/api/v1/characters/profile?region=eu&realm={srv}&name={char_name}&fields=gear"
             async with aiohttp.ClientSession() as session:
                 async with session.get(api_url) as resp:
@@ -194,7 +194,9 @@ class SuperQuickModal(discord.ui.Modal, title='Schnell-Registrierung'):
 
                     forum = interaction.guild.get_channel(FORUM_CHANNEL_ID)
                     if forum:
-                        wcl_text = f"[WarcraftLogs]({self.wcl_link.value})" if self.wcl_link.value else "Nicht angegeben"
+                        # Hier wird der WCL-Link automatisch formatiert
+                        wcl_text = f"[WarcraftLogs]({self.wcl_link.value})" if self.wcl_link.value else "*Keine Logs angegeben*"
+                        
                         content_text = (
                             f"### 🛡️ Neuer Eintrag: {char_name}\n"
                             f"**Datum:** {heute}\n"
@@ -214,6 +216,7 @@ class SuperQuickModal(discord.ui.Modal, title='Schnell-Registrierung'):
             
         except Exception as e: 
             await interaction.followup.send(f"Fehler: {e}", ephemeral=True)
+            
 class GildenLeitungView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
     @discord.ui.button(label="Mitglied eintragen", style=discord.ButtonStyle.green, custom_id="add_btn")
