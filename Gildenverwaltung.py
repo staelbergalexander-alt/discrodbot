@@ -273,7 +273,7 @@ class GildenBot(commands.Bot):
             await self.tree.sync(guild=MY_GUILD)
 
     @tasks.loop(hours=6) # Prüft alle 6 Stunden
-    async def auto_archive_logs(self):
+    async def archive_logs(self):
         guild = self.get_guild(SERVER_ID)
         if not guild: return
         
