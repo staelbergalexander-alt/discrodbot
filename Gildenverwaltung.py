@@ -185,34 +185,69 @@ async def raidumfrage(ctx):
         embed.add_field(name=f"{d} (0)", value="Keine Stimmen", inline=False)
     await ctx.send(embed=embed, view=RaidPollView())
 
-@bot.tree.command(name="check_raid_ready", description="Prüft Gear-Stand der Mitglieder")
-@app_commands.describe(min_ilvl="Minimales Itemlevel (Standard 270)")
-async def check_raid_ready(interaction: discord.Interaction, min_ilvl: int = 270):
+# --- BEFEHL: MITGLIED MANUELL HINZUFÜGEN (Nur Offiziere) ---
+@bot.tree.command(name="add_member_manual", description="Füge ein Mitglied manuell zur Datenbank hinzu (Nur Offiziere)")
+@app_commands.describe(user="Der Discord-User", charname="WoW Charaktername", server="WoW Server (Standard: Blackrock)")
+async def add_member_manual(interaction: discord.Interaction, user: discord.Member, charname: str, server: str = "Blackrock"):
     if not any(role.id == OFFIZIER_ROLLE_ID for role in interaction.user.roles):
-        return await interaction.response.send_message("Keine Rechte!", ephemeral=True)
-    
-    await interaction.response.defer(ephemeral=True)
-    guild = interaction.guild
-    targets = set()
-    m_role, b_role = guild.get_role(MITGLIED_ROLLE_ID), guild.get_role(BEWERBER_ROLLE_ID)
-    if m_role: targets.update(m_role.members)
-    if b_role: targets.update(b_role.members)
+        return await interaction.response.send_message("❌ Keine Rechte für diesen Befehl!", ephemeral=True)
 
-    ready, not_ready = [], []
+    db = load_db()
+    db[str(user.id)] = {"name": charname.strip(), "realm": server.strip()}
+    save_db(db)
+    
+    await interaction.response.send_message(f"✅ Mitglied hinzugefügt: {user.mention} -> **{charname}** auf **{server}**.")
+
+# --- BEFEHL: LISTE DER REGISTRIERTEN PERSONEN ANZEIGEN ---
+@bot.tree.command(name="list_members", description="Zeigt alle manuell hinzugefügten Mitglieder")
+async def list_members(interaction: discord.Interaction):
+    db = load_db()
+    if not db:
+        return await interaction.response.send_message("Die Datenbank ist aktuell leer.", ephemeral=True)
+    
+    liste = []
+    for uid, info in db.items():
+        member = interaction.guild.get_member(int(uid))
+        name = member.display_name if member else f"Unbekannt ({uid})"
+        liste.append(f"• {name}: **{info['name']}** ({info['realm']})")
+    
+    embed = discord.Embed(title="Registrierte Gildenmitglieder", description="\n".join(liste), color=discord.Color.gold())
+    await interaction.response.send_message(embed=embed)
+
+# --- DER VERBESSERTE RAID-READY CHECK ---
+@bot.tree.command(name="check_raid_ready", description="Prüft Gear-Stand der manuell hinzugefügten Mitglieder")
+async def check_raid_ready(interaction: discord.Interaction, min_ilvl: int = 270):
+    await interaction.response.defer()
+    db = load_db()
+    ready, not_ready, missing = [], [], []
+
     async with aiohttp.ClientSession() as session:
-        for member in targets:
-            if member.bot: continue
-            name = member.display_name.split('|')[0].strip()
-            async with session.get(f"https://raider.io/api/v1/characters/profile?region=eu&realm=Blackrock&name={name}&fields=gear") as resp:
+        for user_id, info in db.items():
+            member = interaction.guild.get_member(int(user_id))
+            # Wir prüfen nur Leute, die noch auf dem Server sind
+            if not member: continue 
+
+            name, realm = info["name"], info["realm"]
+            url = f"https://raider.io/api/v1/characters/profile?region=eu&realm={realm}&name={name}&fields=gear"
+            
+            async with session.get(url) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     ilvl = data['gear']['item_level_equipped']
-                    (ready if ilvl >= min_ilvl else not_ready).append(f"{member.mention} ({ilvl})")
+                    line = f"{member.mention} ({name}): **{ilvl}**"
+                    if ilvl >= min_ilvl: ready.append(line)
+                    else: not_ready.append(line)
+                else:
+                    missing.append(f"{member.mention} ({name}-{realm} nicht gefunden)")
             await asyncio.sleep(0.1)
 
-    embed = discord.Embed(title="Raid-Ready Check", color=discord.Color.green())
-    embed.add_field(name="✅ Ready", value="\n".join(ready) or "Keiner", inline=False)
-    embed.add_field(name="❌ Zu niedrig", value="\n".join(not_ready) or "Keiner", inline=False)
+    embed = discord.Embed(title=f"🛡️ Raid-Ready Check (Min: {min_ilvl})", color=discord.Color.blue())
+    embed.add_field(name="✅ Ready", value="\n".join(ready) or "Niemand", inline=False)
+    embed.add_field(name="❌ Zu niedrig", value="\n".join(not_ready) or "Niemand", inline=False)
+    
+    if missing:
+        embed.add_field(name="⚠️ Fehler (API findet Char nicht)", value="\n".join(missing), inline=False)
+    
     await interaction.followup.send(embed=embed)
 
 bot.run(os.getenv('DISCORD_TOKEN'))
