@@ -24,9 +24,9 @@ def get_raid_week_dates():
     following_wednesday = next_thursday + timedelta(days=6)
     return next_thursday.strftime("%d.%m."), following_wednesday.strftime("%d.%m.")
 
-# --- RAID UMFRAGE ---
+# --- VIEWS ---
 class RaidPollView(discord.ui.View):
-    def __init__(self, week_range="Unbekannt"):
+    def __init__(self):
         super().__init__(timeout=None)
         self.days_order = ["Donnerstag", "Freitag", "Samstag", "Sonntag", "Montag", "Dienstag", "Mittwoch"]
 
@@ -60,7 +60,6 @@ class RaidPollView(discord.ui.View):
     @discord.ui.button(label="Mi", style=discord.ButtonStyle.gray, custom_id="poll_6")
     async def v_6(self, i, b): await self.handle_vote(i, 6)
 
-# --- ABLEHNEN MODAL ---
 class RejectModal(discord.ui.Modal, title='Ablehnung begründen'):
     reason = discord.ui.TextInput(label='Grund', style=discord.TextStyle.paragraph, required=True)
     def __init__(self, member_id):
@@ -95,94 +94,58 @@ class ThreadActionView(discord.ui.View):
                 if m_role: await member.add_roles(m_role)
                 if b_role: await member.remove_roles(b_role)
                 await interaction.response.send_message(f"✅ {member.mention} aufgenommen!")
-                await asyncio.sleep(5); await interaction.channel.delete()
+                await asyncio.sleep(5)
+                await interaction.channel.delete()
             except: await interaction.response.send_message("Rechte fehlen!", ephemeral=True)
                 
     @discord.ui.button(label="Ablehnen", style=discord.ButtonStyle.danger, custom_id="reject_btn")
     async def reject(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(RejectModal(self.member_id))
 
-# --- REGISTRIERUNGS MODAL ---
 class SuperQuickModal(discord.ui.Modal, title='Schnell-Registrierung'):
     rio_link = discord.ui.TextInput(label='Raider.io Link', required=True)
     real_name = discord.ui.TextInput(label='Vorname des Spielers', required=True)
 
     async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.send_message(
-            f"✅ Daten empfangen! Bitte **erwähne (@Name)** jetzt den Discord-User in diesem Chat.",
-            ephemeral=True
-        )
-
-        def check(m):
-            return m.author == interaction.user and m.channel == interaction.channel
-
+        await interaction.response.send_message("✅ Daten empfangen! Erwähne (@Name) jetzt den User.", ephemeral=True)
+        def check(m): return m.author == interaction.user and m.channel == interaction.channel
         try:
             msg = await interaction.client.wait_for('message', check=check, timeout=60.0)
             raw_id = msg.content.replace("<@", "").replace("!", "").replace(">", "").replace("&", "")
             target_member = interaction.guild.get_member(int(raw_id)) if raw_id.isdigit() else None
             
-            if not target_member:
-                return await interaction.followup.send("❌ User nicht gefunden.", ephemeral=True)
-
+            if not target_member: return await interaction.followup.send("❌ User nicht gefunden.", ephemeral=True)
             match = re.search(r'characters/eu/([^/]+)/([^/]+)', self.rio_link.value.lower())
             if not match: return await interaction.followup.send("❌ Link ungültig!", ephemeral=True)
             
             srv, name = match.group(1), match.group(2)
             api_url = f"https://raider.io/api/v1/characters/profile?region=eu&realm={srv}&name={name}&fields=gear"
-            
             async with aiohttp.ClientSession() as session:
                 async with session.get(api_url) as resp:
-                    if resp.status != 200: return await interaction.followup.send("❌ Charakter nicht gefunden!", ephemeral=True)
+                    if resp.status != 200: return await interaction.followup.send("❌ Char nicht gefunden!", ephemeral=True)
                     data = await resp.json()
 
-            char_class = data['class']
-            char_name = data['name']
-            wcl_url = f"https://www.warcraftlogs.com/character/{REGION}/{srv}/{name}"
-            join_date = target_member.joined_at.strftime("%d.%m.%Y")
-
+            char_class, char_name = data['class'], data['name']
             forum = interaction.guild.get_channel(FORUM_CHANNEL_ID)
             if forum:
                 res = await forum.create_thread(
                     name=f"[{char_class}] {char_name} | {self.real_name.value}",
-                    content=f"### 🛡️ Neuer Eintrag: {char_name}\n"
-                            f"**Discord-Beitritt:** {join_date}\n\n"
-                            f"**Klasse:** {char_class}\n"
-                            f"**Spieler:** {self.real_name.value}\n\n"
-                            f"📈 **Profile:**\n"
-                            f"• [Warcraft Logs]({wcl_url})\n"
-                            f"• [Raider.io]({self.rio_link.value})"
+                    content=f"### 🛡️ Neuer Eintrag: {char_name}\n**Klasse:** {char_class}\n**Spieler:** {self.real_name.value}\n[Raider.io]({self.rio_link.value})"
                 )
-                
-                try:
-                    await target_member.edit(nick=f"{char_name} | {self.real_name.value}")
-                    c_role = discord.utils.get(interaction.guild.roles, name=char_class)
-                    b_role = interaction.guild.get_role(BEWERBER_ROLLE_ID)
-                    g_role = interaction.guild.get_role(GAST_ROLLE_ID)
-                    if c_role: await target_member.add_roles(c_role)
-                    if b_role: await target_member.add_roles(b_role)
-                    if g_role: await target_member.remove_roles(g_role)
-                    
-                    await res.thread.send(f"💡 Entscheidung für {target_member.mention}:", view=ThreadActionView(target_member.id))
-                except: pass
-                
-                try: await msg.delete() 
-                except: pass
+                await res.thread.send(f"💡 Entscheidung für {target_member.mention}:", view=ThreadActionView(target_member.id))
+                await target_member.edit(nick=f"{char_name} | {self.real_name.value}")
+            await msg.delete()
+        except Exception as e: await interaction.followup.send(f"Fehler: {e}", ephemeral=True)
 
-            await interaction.followup.send(f"✅ Eintrag für {char_name} erstellt!", ephemeral=True)
-
-        except asyncio.TimeoutError:
-            await interaction.followup.send("❌ Zeit abgelaufen.", ephemeral=True)
-
-# --- VIEWS & BOT ---
 class GildenLeitungView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
     @discord.ui.button(label="Mitglied eintragen", style=discord.ButtonStyle.green, custom_id="add_btn")
     async def add_member(self, interaction: discord.Interaction, button: discord.ui.Button):
         if any(role.id == OFFIZIER_ROLLE_ID for role in interaction.user.roles):
             await interaction.response.send_modal(SuperQuickModal())
-        else:
-            await interaction.response.send_message("Keine Berechtigung!", ephemeral=True)
+        else: await interaction.response.send_message("Keine Rechte!", ephemeral=True)
 
+# --- BOT KLASSE ---
 class GildenBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
@@ -193,73 +156,25 @@ class GildenBot(commands.Bot):
     async def setup_hook(self):
         self.add_view(GildenLeitungView())
         self.add_view(RaidPollView())
-        
-        # Sofortiger Sync für deinen Server
-        MY_GUILD = discord.Object(id=SERVER_ID) 
-        self.tree.copy_global_to(guild=MY_GUILD)
-        await self.tree.sync(guild=MY_GUILD)
-        print(f"Befehle für Server {MY_GUILD.id} synchronisiert.")
+        if SERVER_ID != 0:
+            MY_GUILD = discord.Object(id=SERVER_ID)
+            self.tree.copy_global_to(guild=MY_GUILD)
+            await self.tree.sync(guild=MY_GUILD)
+            print(f"Befehle für Server {SERVER_ID} synchronisiert.")
 
-    # --- RAID READY COMMAND (MUSS EINGERÜCKT SEIN) ---
-    @app_commands.command(name="check_raid_ready", description="Prüft Gear-Stand aller Mitglieder & Bewerber")
-    async def check_raid_ready(self, interaction: discord.Interaction, min_ilvl: int = 270):
-        if not any(role.id == OFFIZIER_ROLLE_ID for role in interaction.user.roles):
-            return await interaction.response.send_message("Keine Rechte!", ephemeral=False)
-
-        await interaction.response.defer(ephemeral=True)
-        
-        guild = interaction.guild
-        m_role = guild.get_role(MITGLIED_ROLLE_ID)
-        b_role = guild.get_role(BEWERBER_ROLLE_ID)
-        
-        targets = set()
-        if m_role: targets.update(m_role.members)
-        if b_role: targets.update(b_role.members)
-        
-        ready_list = []
-        not_ready_list = []
-        errors = []
-
-        async with aiohttp.ClientSession() as session:
-            for member in targets:
-                if member.bot: continue
-                name_part = member.display_name.split('|')[0].strip()
-                realm = "Blackrock" 
-                
-                api_url = f"https://raider.io/api/v1/characters/profile?region=eu&realm={realm}&name={name_part}&fields=gear"
-                
-                try:
-                    async with session.get(api_url) as resp:
-                        if resp.status == 200:
-                            data = await resp.json()
-                            equipped_ilvl = data['gear']['item_level_equipped']
-                            info = f"{member.mention} ({equipped_ilvl} GS)"
-                            if equipped_ilvl >= min_ilvl:
-                                ready_list.append(info)
-                            else:
-                                not_ready_list.append(info)
-                        else:
-                            errors.append(f"❓ {member.display_name} (Nicht gefunden)")
-                except Exception:
-                    errors.append(f"⚠️ {member.display_name} (API Fehler)")
-                
-                await asyncio.sleep(0.2)
-
-        embed = discord.Embed(title=f"Raid-Ready Check (Min GS: {min_ilvl})", color=discord.Color.blue())
-        embed.add_field(name="✅ Ready", value="\n".join(ready_list) if ready_list else "Niemand", inline=False)
-        embed.add_field(name="❌ Zu niedrig", value="\n".join(not_ready_list) if not_ready_list else "Niemand", inline=False)
-        if errors:
-            embed.add_field(name="🚫 Fehler", value="\n".join(errors), inline=False)
-
-        await interaction.followup.send(embed=embed, ephemeral=False)
-
-# Bot Instanz erstellen
+# --- BOT INSTANZ & BEFEHLE ---
 bot = GildenBot()
 
 @bot.command()
 @commands.has_permissions(administrator=True)
+async def sync(ctx):
+    await bot.tree.sync(guild=discord.Object(id=SERVER_ID))
+    await ctx.send("✅ Slash-Commands synchronisiert!")
+
+@bot.command()
 async def setup(ctx):
-    await ctx.send("### 🏰 Gildenverwaltung", view=GildenLeitungView())
+    if any(role.id == OFFIZIER_ROLLE_ID for role in ctx.author.roles):
+        await ctx.send("### 🏰 Gildenverwaltung", view=GildenLeitungView())
 
 @bot.command()
 async def raidumfrage(ctx):
@@ -269,11 +184,35 @@ async def raidumfrage(ctx):
     for d in ["Donnerstag", "Freitag", "Samstag", "Sonntag", "Montag", "Dienstag", "Mittwoch"]:
         embed.add_field(name=f"{d} (0)", value="Keine Stimmen", inline=False)
     await ctx.send(embed=embed, view=RaidPollView())
+
+@bot.tree.command(name="check_raid_ready", description="Prüft Gear-Stand der Mitglieder")
+@app_commands.describe(min_ilvl="Minimales Itemlevel (Standard 270)")
+async def check_raid_ready(interaction: discord.Interaction, min_ilvl: int = 270):
+    if not any(role.id == OFFIZIER_ROLLE_ID for role in interaction.user.roles):
+        return await interaction.response.send_message("Keine Rechte!", ephemeral=True)
     
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def sync(ctx):
-    await bot.tree.sync(guild=discord.Object(id=SERVER_ID))
-    await ctx.send("Befehle wurden für diesen Server synchronisiert!")
-# Bot starten
+    await interaction.response.defer(ephemeral=True)
+    guild = interaction.guild
+    targets = set()
+    m_role, b_role = guild.get_role(MITGLIED_ROLLE_ID), guild.get_role(BEWERBER_ROLLE_ID)
+    if m_role: targets.update(m_role.members)
+    if b_role: targets.update(b_role.members)
+
+    ready, not_ready = [], []
+    async with aiohttp.ClientSession() as session:
+        for member in targets:
+            if member.bot: continue
+            name = member.display_name.split('|')[0].strip()
+            async with session.get(f"https://raider.io/api/v1/characters/profile?region=eu&realm=Blackrock&name={name}&fields=gear") as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    ilvl = data['gear']['item_level_equipped']
+                    (ready if ilvl >= min_ilvl else not_ready).append(f"{member.mention} ({ilvl})")
+            await asyncio.sleep(0.1)
+
+    embed = discord.Embed(title="Raid-Ready Check", color=discord.Color.green())
+    embed.add_field(name="✅ Ready", value="\n".join(ready) or "Keiner", inline=False)
+    embed.add_field(name="❌ Zu niedrig", value="\n".join(not_ready) or "Keiner", inline=False)
+    await interaction.followup.send(embed=embed)
+
 bot.run(os.getenv('DISCORD_TOKEN'))
