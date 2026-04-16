@@ -156,31 +156,44 @@ class SuperQuickModal(discord.ui.Modal, title='Schnell-Registrierung'):
             raw_id = msg.content.replace("<@", "").replace("!", "").replace(">", "").replace("&", "")
             target_member = interaction.guild.get_member(int(raw_id)) if raw_id.isdigit() else None
             
-            if not target_member: return await interaction.followup.send("❌ User nicht gefunden.", ephemeral=True)
-            match = re.search(r'characters/eu/([^/]+)/([^/]+)', self.rio_link.value.lower())
-            if not match: return await interaction.followup.send("❌ Link ungültig!", ephemeral=True)
-                
-            db = load_db()
-            db[str(target_member.id)] = {"name": name, "realm": srv}
-            save_db(db)
+            if not target_member: 
+                return await interaction.followup.send("❌ User nicht gefunden.", ephemeral=True)
             
-            api_url = f"https://raider.io/api/v1/characters/profile?region=eu&realm={srv}&name={name}&fields=gear"
+            # Link parsen
+            match = re.search(r'characters/eu/([^/]+)/([^/]+)', self.rio_link.value.lower())
+            if not match: 
+                return await interaction.followup.send("❌ Link ungültig!", ephemeral=True)
+            
+            # Hier waren die Definitionen wichtig:
+            srv = match.group(1).capitalize()
+            char_name = match.group(2).capitalize() # Variable eindeutig benannt
+
+            # AUTO-SAVE IN DIE DATENBANK
+            db = load_db()
+            db[str(target_member.id)] = {"name": char_name, "realm": srv}
+            save_db(db)
+
+            # API Abfrage für die Klasse (für den Forum-Thread)
+            api_url = f"https://raider.io/api/v1/characters/profile?region=eu&realm={srv}&name={char_name}&fields=gear"
             async with aiohttp.ClientSession() as session:
                 async with session.get(api_url) as resp:
-                    if resp.status != 200: return await interaction.followup.send("❌ Char nicht gefunden!", ephemeral=True)
-                    data = await resp.json()
-
-            char_class, char_name = data['class'], data['name']
-            forum = interaction.guild.get_channel(FORUM_CHANNEL_ID)
-            if forum:
-                res = await forum.create_thread(
-                    name=f"[{char_class}] {char_name} | {self.real_name.value}",
-                    content=f"### 🛡️ Neuer Eintrag: {char_name}\n**Klasse:** {char_class}\n**Spieler:** {self.real_name.value}\n[Raider.io]({self.rio_link.value})"
-                )
-                await res.thread.send(f"💡 Entscheidung für {target_member.mention}:", view=ThreadActionView(target_member.id))
-                await target_member.edit(nick=f"{char_name} | {self.real_name.value}")
+                    if resp.status == 200:
+                        data = await resp.json()
+                        char_class = data['class']
+                        forum = interaction.guild.get_channel(FORUM_CHANNEL_ID)
+                        if forum:
+                            res = await forum.create_thread(
+                                name=f"[{char_class}] {char_name} | {self.real_name.value}",
+                                content=f"### 🛡️ Neuer Eintrag: {char_name}\n**Klasse:** {char_class}\n**Spieler:** {self.real_name.value}\n[Raider.io]({self.rio_link.value})"
+                            )
+                            await res.thread.send(f"💡 Entscheidung für {target_member.mention}:", view=ThreadActionView(target_member.id))
+                            await target_member.edit(nick=f"{char_name} | {self.real_name.value}")
+            
             await msg.delete()
-        except Exception as e: await interaction.followup.send(f"Fehler: {e}", ephemeral=True)
+            await interaction.followup.send(f"✅ {char_name} registriert und im Forum erstellt!", ephemeral=True)
+            
+        except Exception as e: 
+            await interaction.followup.send(f"Fehler: {e}", ephemeral=True)
 
 class GildenLeitungView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
