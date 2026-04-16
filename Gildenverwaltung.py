@@ -202,6 +202,71 @@ bot = GildenBot()
 async def setup(ctx):
     await ctx.send("### 🏰 Gildenverwaltung", view=GildenLeitungView())
 
+@bot.tree.command(name="check_raid_ready", description="Prüft Gear-Stand aller Mitglieder & Bewerber")
+    async def check_raid_ready(self, interaction: discord.Interaction, min_ilvl: int = 610):
+        if not any(role.id == OFFIZIER_ROLLE_ID for role in interaction.user.roles):
+            return await interaction.response.send_message("Keine Rechte!", ephemeral=True)
+
+        await interaction.response.defer(ephemeral=True)
+        
+        guild = interaction.guild
+        # Rollen abrufen
+        m_role = guild.get_role(MITGLIED_ROLLE_ID)
+        b_role = guild.get_role(BEWERBER_ROLLE_ID)
+        
+        # Liste aller zu prüfenden User (ohne Duplikate)
+        targets = set()
+        if m_role: targets.update(m_role.members)
+        if b_role: targets.update(b_role.members)
+        
+        ready_list = []
+        not_ready_list = []
+        errors = []
+
+        async with aiohttp.ClientSession() as session:
+            for member in targets:
+                if member.bot: continue
+                
+                # Wir versuchen den Namen aus dem Nickname zu extrahieren "Charname | Vorname"
+                # Wenn kein "|" da ist, nehmen wir den ganzen Nicknamen
+                name_part = member.display_name.split('|')[0].strip()
+                
+                # Hier nutzen wir einen Standard-Server, falls keiner im Nick steht, 
+                # oder wir müssten den Server auch im Nick speichern.
+                # Alternativ: Wir nutzen den Server aus deiner Konfiguration.
+                realm = "Blackhand" # <-- Hier Standard-Server deiner Gilde eintragen
+                
+                api_url = f"https://raider.io/api/v1/characters/profile?region=eu&realm={realm}&name={name_part}&fields=gear"
+                
+                try:
+                    async with session.get(api_url) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            equipped_ilvl = data['gear']['item_level_equipped']
+                            
+                            info = f"{member.mention} ({equipped_ilvl} GS)"
+                            if equipped_ilvl >= min_ilvl:
+                                ready_list.append(info)
+                            else:
+                                not_ready_list.append(info)
+                        else:
+                            errors.append(f"❓ {member.display_name} (Nicht gefunden)")
+                except Exception:
+                    errors.append(f"⚠️ {member.display_name} (API Fehler)")
+                
+                # Kurze Pause, um die API nicht zu fluten (Rate Limiting)
+                await asyncio.sleep(0.2)
+
+        # Ergebnis-Embeds (wir teilen es auf, falls die Listen zu lang werden)
+        embed = discord.Embed(title=f"Raid-Ready Check (Min GS: {min_ilvl})", color=discord.Color.blue())
+        embed.add_field(name="✅ Ready", value="\n".join(ready_list) if ready_list else "Niemand", inline=False)
+        embed.add_field(name="❌ Zu niedrig", value="\n".join(not_ready_list) if not_ready_list else "Niemand", inline=False)
+        
+        if errors:
+            embed.add_field(name="🚫 Fehler/Nicht gefunden", value="\n".join(errors), inline=False)
+
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
 @bot.command()
 async def raidumfrage(ctx):
     if not any(role.id == OFFIZIER_ROLLE_ID for role in ctx.author.roles): return
