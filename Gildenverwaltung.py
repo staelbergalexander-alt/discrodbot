@@ -199,7 +199,6 @@ async def raidumfrage(ctx):
         embed.add_field(name=f"{d} (0)", value="Keine Stimmen", inline=False)
     await ctx.send(embed=embed, view=RaidPollView())
 
---- NEUER BEFEHL: HINZUFÜGEN PER LINK ---
 @bot.tree.command(name="add_member_rio", description="Füge ein Mitglied per Raider.io Link hinzu")
 @app_commands.describe(user="Der Discord-User", rio_link="Der vollständige Raider.io Link")
 async def add_member_rio(interaction: discord.Interaction, user: discord.Member, rio_link: str):
