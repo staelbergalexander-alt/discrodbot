@@ -262,7 +262,7 @@ class GildenBot(commands.Bot):
         intents.message_content = True
         intents.members = True
         super().__init__(command_prefix="!", intents=intents)
-        self.archive_task.start()
+        self.archive_logs.start()
     
     async def setup_hook(self):
         self.add_view(GildenLeitungView())
