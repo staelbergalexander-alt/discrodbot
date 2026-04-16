@@ -195,7 +195,7 @@ class GildenBot(commands.Bot):
         self.add_view(GildenLeitungView())
         self.add_view(RaidPollView())
 
-bot = GildenBot()
+
 
 @bot.command()
 @commands.has_permissions(administrator=True)
@@ -275,5 +275,5 @@ async def raidumfrage(ctx):
     for d in ["Donnerstag", "Freitag", "Samstag", "Sonntag", "Montag", "Dienstag", "Mittwoch"]:
         embed.add_field(name=f"{d} (0)", value="Keine Stimmen", inline=False)
     await ctx.send(embed=embed, view=RaidPollView())
-
+bot = GildenBot()
 bot.run(os.getenv('DISCORD_TOKEN'))
