@@ -169,6 +169,9 @@ class SuperQuickModal(discord.ui.Modal, title='Schnell-Registrierung'):
     real_name = discord.ui.TextInput(label='Vorname des Spielers', placeholder="z.B. Max", required=True)
 
     async def on_submit(self, interaction: discord.Interaction):
+        # Den Namen des Offiziers speichern, der das Modal abgeschickt hat
+        ersteller = interaction.user.display_name 
+        
         await interaction.response.send_message("✅ Daten empfangen! Erwähne (@Name) jetzt den User im Chat.", ephemeral=True)
         
         def check(m): 
@@ -182,13 +185,17 @@ class SuperQuickModal(discord.ui.Modal, title='Schnell-Registrierung'):
             if not target_member: 
                 return await interaction.followup.send("❌ User nicht gefunden.", ephemeral=True)
             
-            # 1. Rollenvergabe (Bewerber)
+            # --- ROLLEN-MANAGEMENT ---
             b_role = interaction.guild.get_role(BEWERBER_ROLLE_ID)
-            if b_role:
-                try: await target_member.add_roles(b_role)
-                except: print("Rollenfehler: Prüfe Bot-Rechte!")
+            g_role = interaction.guild.get_role(GAST_ROLLE_ID)
+            
+            try:
+                if g_role: await target_member.remove_roles(g_role)
+                if b_role: await target_member.add_roles(b_role)
+            except:
+                print("Rollenfehler beim Anlegen: Rechte prüfen!")
 
-            # 2. Link parsen
+            # Link parsen
             match = re.search(r'characters/eu/([^/]+)/([^/]+)', self.rio_link.value.lower())
             if not match: 
                 return await interaction.followup.send("❌ Raider.io Link ungültig!", ephemeral=True)
@@ -196,11 +203,6 @@ class SuperQuickModal(discord.ui.Modal, title='Schnell-Registrierung'):
             srv_raw, name_raw = match.group(1), match.group(2)
             srv, char_name = srv_raw.capitalize(), name_raw.capitalize()
             heute = datetime.now().strftime("%d.%m.%Y")
-
-            # --- AUTOMATISCHER WCL LINK GENERATOR ---
-            # WCL nutzt oft Bindestriche für Servernamen mit Leerzeichen (z.B. Blackmoore bleibt blackmoore, 
-            # aber Server wie "Die Silberne Hand" müssten angepasst werden). 
-            # Für die meisten EU-Server reicht Kleinschreibung:
             wcl_url = f"https://www.warcraftlogs.com/character/eu/{srv_raw.lower()}/{name_raw.lower()}"
 
             # Datenbank Update
@@ -208,7 +210,7 @@ class SuperQuickModal(discord.ui.Modal, title='Schnell-Registrierung'):
             db[str(target_member.id)] = {"name": char_name, "realm": srv}
             save_db(db)
 
-            # 3. API & Forum-Thread
+            # API & Forum-Thread
             api_url = f"https://raider.io/api/v1/characters/profile?region=eu&realm={srv}&name={char_name}&fields=gear"
             async with aiohttp.ClientSession() as session:
                 async with session.get(api_url) as resp:
@@ -222,6 +224,7 @@ class SuperQuickModal(discord.ui.Modal, title='Schnell-Registrierung'):
                         content_text = (
                             f"### 🛡️ Neuer Eintrag: {char_name}\n"
                             f"**Datum:** {heute}\n"
+                            f"**Erstellt von:** {ersteller}\n" # <--- NEU
                             f"**Klasse:** {char_class}\n"
                             f"**Spieler:** {self.real_name.value}\n"
                             f"**Links:** [Raider.io]({self.rio_link.value}) | [WarcraftLogs]({wcl_url})"
