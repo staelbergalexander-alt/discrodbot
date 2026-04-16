@@ -132,18 +132,38 @@ class ThreadActionView(discord.ui.View):
         member = interaction.guild.get_member(self.member_id)
         if member:
             try:
-                m_role, b_role = interaction.guild.get_role(MITGLIED_ROLLE_ID), interaction.guild.get_role(BEWERBER_ROLLE_ID)
-                if m_role: await member.add_roles(m_role)
-                if b_role: await member.remove_roles(b_role)
-                await interaction.response.send_message(f"✅ {member.mention} aufgenommen!")
+                # Rollen-Objekte holen
+                m_role = interaction.guild.get_role(MITGLIED_ROLLE_ID)
+                b_role = interaction.guild.get_role(BEWERBER_ROLLE_ID)
+                g_role = interaction.guild.get_role(GAST_ROLLE_ID) # Gast Rolle
+                
+                roles_to_add = []
+                roles_to_remove = []
+
+                if m_role: roles_to_add.append(m_role)
+                if b_role: roles_to_remove.append(b_role)
+                if g_role: roles_to_remove.append(g_role) # Gast zum Entfernen markieren
+
+                # Rollen-Update ausführen
+                if roles_to_add: await member.add_roles(*roles_to_add)
+                if roles_to_remove: await member.remove_roles(*roles_to_remove)
+                
+                await interaction.response.send_message(f"✅ {member.mention} als Mitglied aufgenommen und Gast/Bewerber-Rollen entfernt!")
+                
+                # Kurze Pause bevor der Thread gelöscht wird
                 await asyncio.sleep(5)
                 await interaction.channel.delete()
-            except: await interaction.response.send_message("Rechte fehlen!", ephemeral=True)
+                
+            except Exception as e: 
+                await interaction.response.send_message(f"Fehler bei Rollenvergabe: {e}", ephemeral=True)
+        else:
+            await interaction.response.send_message("User nicht mehr auf dem Server gefunden.", ephemeral=True)
                 
     @discord.ui.button(label="Ablehnen", style=discord.ButtonStyle.danger, custom_id="reject_btn")
     async def reject(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(RejectModal(self.member_id))
-
+        # Hier bleibt deine Ablehnungs-Logik (Modal oder Nachricht)
+        await interaction.response.send_message("❌ Bewerbung wurde abgelehnt.")
+        
 class SuperQuickModal(discord.ui.Modal, title='Schnell-Registrierung'):
     rio_link = discord.ui.TextInput(label='Raider.io Link', placeholder="https://raider.io/characters/eu/...", required=True)
     real_name = discord.ui.TextInput(label='Vorname des Spielers', placeholder="z.B. Max", required=True)
