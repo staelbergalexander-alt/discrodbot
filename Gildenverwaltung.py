@@ -146,7 +146,6 @@ class ThreadActionView(discord.ui.View):
 
 class SuperQuickModal(discord.ui.Modal, title='Schnell-Registrierung'):
     rio_link = discord.ui.TextInput(label='Raider.io Link', placeholder="https://raider.io/characters/eu/...", required=True)
-    wcl_link = discord.ui.TextInput(label='Warcraft Logs Link', placeholder="https://www.warcraftlogs.com/character/eu/...", required=False)
     real_name = discord.ui.TextInput(label='Vorname des Spielers', placeholder="z.B. Max", required=True)
 
     async def on_submit(self, interaction: discord.Interaction):
@@ -166,24 +165,30 @@ class SuperQuickModal(discord.ui.Modal, title='Schnell-Registrierung'):
             # 1. Rollenvergabe (Bewerber)
             b_role = interaction.guild.get_role(BEWERBER_ROLLE_ID)
             if b_role:
-                try:
-                    await target_member.add_roles(b_role)
-                except:
-                    print(f"Konnte Rolle nicht vergeben - Bot-Position prüfen!")
+                try: await target_member.add_roles(b_role)
+                except: print("Rollenfehler: Prüfe Bot-Rechte!")
 
-            # 2. Link parsen & Datenbank (Volume)
+            # 2. Link parsen
             match = re.search(r'characters/eu/([^/]+)/([^/]+)', self.rio_link.value.lower())
             if not match: 
                 return await interaction.followup.send("❌ Raider.io Link ungültig!", ephemeral=True)
             
-            srv, char_name = match.group(1).capitalize(), match.group(2).capitalize()
+            srv_raw, name_raw = match.group(1), match.group(2)
+            srv, char_name = srv_raw.capitalize(), name_raw.capitalize()
             heute = datetime.now().strftime("%d.%m.%Y")
 
+            # --- AUTOMATISCHER WCL LINK GENERATOR ---
+            # WCL nutzt oft Bindestriche für Servernamen mit Leerzeichen (z.B. Blackmoore bleibt blackmoore, 
+            # aber Server wie "Die Silberne Hand" müssten angepasst werden). 
+            # Für die meisten EU-Server reicht Kleinschreibung:
+            wcl_url = f"https://www.warcraftlogs.com/character/eu/{srv_raw.lower()}/{name_raw.lower()}"
+
+            # Datenbank Update
             db = load_db()
             db[str(target_member.id)] = {"name": char_name, "realm": srv}
             save_db(db)
 
-            # 3. API & Forum-Thread erstellen
+            # 3. API & Forum-Thread
             api_url = f"https://raider.io/api/v1/characters/profile?region=eu&realm={srv}&name={char_name}&fields=gear"
             async with aiohttp.ClientSession() as session:
                 async with session.get(api_url) as resp:
@@ -194,15 +199,12 @@ class SuperQuickModal(discord.ui.Modal, title='Schnell-Registrierung'):
 
                     forum = interaction.guild.get_channel(FORUM_CHANNEL_ID)
                     if forum:
-                        # Hier wird der WCL-Link automatisch formatiert
-                        wcl_text = f"[WarcraftLogs]({self.wcl_link.value})" if self.wcl_link.value else "*Keine Logs angegeben*"
-                        
                         content_text = (
                             f"### 🛡️ Neuer Eintrag: {char_name}\n"
                             f"**Datum:** {heute}\n"
                             f"**Klasse:** {char_class}\n"
                             f"**Spieler:** {self.real_name.value}\n"
-                            f"**Links:** [Raider.io]({self.rio_link.value}) | {wcl_text}"
+                            f"**Links:** [Raider.io]({self.rio_link.value}) | [WarcraftLogs]({wcl_url})"
                         )
                         
                         res = await forum.create_thread(
