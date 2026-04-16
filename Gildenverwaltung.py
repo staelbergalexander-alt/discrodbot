@@ -59,8 +59,6 @@ class RaidPollView(discord.ui.View):
     @discord.ui.button(label="Mi", style=discord.ButtonStyle.gray, custom_id="poll_6")
     async def v_6(self, i, b): await self.handle_vote(i, 6)
 
-# --- REGISTRIERUNGS LOGIK ---
-
 # --- ABLEHNEN MODAL ---
 class RejectModal(discord.ui.Modal, title='Ablehnung begründen'):
     reason = discord.ui.TextInput(label='Grund', style=discord.TextStyle.paragraph, required=True)
@@ -103,6 +101,7 @@ class ThreadActionView(discord.ui.View):
     async def reject(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(RejectModal(self.member_id))
 
+# --- REGISTRIERUNGS MODAL ---
 class SuperQuickModal(discord.ui.Modal, title='Schnell-Registrierung'):
     rio_link = discord.ui.TextInput(label='Raider.io Link', required=True)
     real_name = discord.ui.TextInput(label='Vorname des Spielers', required=True)
@@ -124,7 +123,6 @@ class SuperQuickModal(discord.ui.Modal, title='Schnell-Registrierung'):
             if not target_member:
                 return await interaction.followup.send("❌ User nicht gefunden.", ephemeral=True)
 
-            # API Abfrage
             match = re.search(r'characters/eu/([^/]+)/([^/]+)', self.rio_link.value.lower())
             if not match: return await interaction.followup.send("❌ Link ungültig!", ephemeral=True)
             
@@ -139,8 +137,6 @@ class SuperQuickModal(discord.ui.Modal, title='Schnell-Registrierung'):
             char_class = data['class']
             char_name = data['name']
             wcl_url = f"https://www.warcraftlogs.com/character/{REGION}/{srv}/{name}"
-
-            # Beitrittsdatum formatieren
             join_date = target_member.joined_at.strftime("%d.%m.%Y")
 
             forum = interaction.guild.get_channel(FORUM_CHANNEL_ID)
@@ -148,7 +144,7 @@ class SuperQuickModal(discord.ui.Modal, title='Schnell-Registrierung'):
                 res = await forum.create_thread(
                     name=f"[{char_class}] {char_name} | {self.real_name.value}",
                     content=f"### 🛡️ Neuer Eintrag: {char_name}\n"
-                            f"**Discord-Beitritt:** {join_date}\n\n" # <-- Hier ist das Datum
+                            f"**Discord-Beitritt:** {join_date}\n\n"
                             f"**Klasse:** {char_class}\n"
                             f"**Spieler:** {self.real_name.value}\n\n"
                             f"📈 **Profile:**\n"
@@ -175,8 +171,8 @@ class SuperQuickModal(discord.ui.Modal, title='Schnell-Registrierung'):
 
         except asyncio.TimeoutError:
             await interaction.followup.send("❌ Zeit abgelaufen.", ephemeral=True)
-# --- BOT SETUP ---
 
+# --- VIEWS & BOT ---
 class GildenLeitungView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
     @discord.ui.button(label="Mitglied eintragen", style=discord.ButtonStyle.green, custom_id="add_btn")
@@ -188,7 +184,9 @@ class GildenLeitungView(discord.ui.View):
 
 class GildenBot(commands.Bot):
     def __init__(self):
-        intents = discord.Intents.default(); intents.message_content = True; intents.members = True
+        intents = discord.Intents.default()
+        intents.message_content = True
+        intents.members = True
         super().__init__(command_prefix="!", intents=intents)
     
     async def setup_hook(self):
@@ -196,14 +194,8 @@ class GildenBot(commands.Bot):
         self.add_view(RaidPollView())
         await self.tree.sync()
 
-
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def setup(ctx):
-    await ctx.send("### 🏰 Gildenverwaltung", view=GildenLeitungView())
-
-@bot.tree.command(name="check_raid_ready", description="Prüft Gear-Stand aller Mitglieder & Bewerber")
+    # --- RAID READY COMMAND (INNERHALB DER KLASSE) ---
+    @app_commands.command(name="check_raid_ready", description="Prüft Gear-Stand aller Mitglieder & Bewerber")
     async def check_raid_ready(self, interaction: discord.Interaction, min_ilvl: int = 270):
         if not any(role.id == OFFIZIER_ROLLE_ID for role in interaction.user.roles):
             return await interaction.response.send_message("Keine Rechte!", ephemeral=True)
@@ -211,11 +203,9 @@ async def setup(ctx):
         await interaction.response.defer(ephemeral=True)
         
         guild = interaction.guild
-        # Rollen abrufen
         m_role = guild.get_role(MITGLIED_ROLLE_ID)
         b_role = guild.get_role(BEWERBER_ROLLE_ID)
         
-        # Liste aller zu prüfenden User (ohne Duplikate)
         targets = set()
         if m_role: targets.update(m_role.members)
         if b_role: targets.update(b_role.members)
@@ -227,15 +217,8 @@ async def setup(ctx):
         async with aiohttp.ClientSession() as session:
             for member in targets:
                 if member.bot: continue
-                
-                # Wir versuchen den Namen aus dem Nickname zu extrahieren "Charname | Vorname"
-                # Wenn kein "|" da ist, nehmen wir den ganzen Nicknamen
                 name_part = member.display_name.split('|')[0].strip()
-                
-                # Hier nutzen wir einen Standard-Server, falls keiner im Nick steht, 
-                # oder wir müssten den Server auch im Nick speichern.
-                # Alternativ: Wir nutzen den Server aus deiner Konfiguration.
-                realm = "Blackhand" # <-- Hier Standard-Server deiner Gilde eintragen
+                realm = "Blackhand" 
                 
                 api_url = f"https://raider.io/api/v1/characters/profile?region=eu&realm={realm}&name={name_part}&fields=gear"
                 
@@ -244,7 +227,6 @@ async def setup(ctx):
                         if resp.status == 200:
                             data = await resp.json()
                             equipped_ilvl = data['gear']['item_level_equipped']
-                            
                             info = f"{member.mention} ({equipped_ilvl} GS)"
                             if equipped_ilvl >= min_ilvl:
                                 ready_list.append(info)
@@ -255,18 +237,23 @@ async def setup(ctx):
                 except Exception:
                     errors.append(f"⚠️ {member.display_name} (API Fehler)")
                 
-                # Kurze Pause, um die API nicht zu fluten (Rate Limiting)
                 await asyncio.sleep(0.2)
 
-        # Ergebnis-Embeds (wir teilen es auf, falls die Listen zu lang werden)
         embed = discord.Embed(title=f"Raid-Ready Check (Min GS: {min_ilvl})", color=discord.Color.blue())
         embed.add_field(name="✅ Ready", value="\n".join(ready_list) if ready_list else "Niemand", inline=False)
         embed.add_field(name="❌ Zu niedrig", value="\n".join(not_ready_list) if not_ready_list else "Niemand", inline=False)
-        
         if errors:
-            embed.add_field(name="🚫 Fehler/Nicht gefunden", value="\n".join(errors), inline=False)
+            embed.add_field(name="🚫 Fehler", value="\n".join(errors), inline=False)
 
         await interaction.followup.send(embed=embed, ephemeral=True)
+
+# Bot Instanz erstellen
+bot = GildenBot()
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def setup(ctx):
+    await ctx.send("### 🏰 Gildenverwaltung", view=GildenLeitungView())
 
 @bot.command()
 async def raidumfrage(ctx):
@@ -276,5 +263,6 @@ async def raidumfrage(ctx):
     for d in ["Donnerstag", "Freitag", "Samstag", "Sonntag", "Montag", "Dienstag", "Mittwoch"]:
         embed.add_field(name=f"{d} (0)", value="Keine Stimmen", inline=False)
     await ctx.send(embed=embed, view=RaidPollView())
-bot = GildenBot()
+
+# Bot starten
 bot.run(os.getenv('DISCORD_TOKEN'))
