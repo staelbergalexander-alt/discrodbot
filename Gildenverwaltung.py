@@ -218,7 +218,7 @@ class GildenBot(commands.Bot):
             for member in targets:
                 if member.bot: continue
                 name_part = member.display_name.split('|')[0].strip()
-                realm = "Blackhand" 
+                realm = "Blackrock" 
                 
                 api_url = f"https://raider.io/api/v1/characters/profile?region=eu&realm={realm}&name={name_part}&fields=gear"
                 
@@ -245,7 +245,7 @@ class GildenBot(commands.Bot):
         if errors:
             embed.add_field(name="🚫 Fehler", value="\n".join(errors), inline=False)
 
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed, ephemeral=False)
 
 # Bot Instanz erstellen
 bot = GildenBot()
