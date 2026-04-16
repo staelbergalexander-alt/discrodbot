@@ -18,7 +18,15 @@ SERVER_ID = int(os.getenv('SERVER_ID') or 0)
 DB_FILE = "mitglieder_db.json"
 REGION = "eu"
 
-# --- DATENBANK FUNKTIONEN ---
+# --- KONFIGURATION ---
+DB_FOLDER = "/app/data" # Der Pfad zum Volume
+DB_FILE = os.path.join(DB_FOLDER, "mitglieder_db.json")
+
+# Erstelle den Ordner, falls er im Volume noch nicht existiert
+if not os.path.exists(DB_FOLDER):
+    os.makedirs(DB_FOLDER)
+
+# Der Rest der Datenbank-Funktionen bleibt gleich:
 def load_db():
     if os.path.exists(DB_FILE):
         with open(DB_FILE, "r") as f: 
@@ -29,7 +37,7 @@ def load_db():
 def save_db(data):
     with open(DB_FILE, "w") as f: 
         json.dump(data, f, indent=4)
-
+        
 def get_raid_week_dates():
     now = datetime.now()
     days_until_thursday = (3 - now.weekday() + 7) % 7
