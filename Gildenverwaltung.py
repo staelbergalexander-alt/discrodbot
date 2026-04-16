@@ -381,5 +381,4 @@ async def check_raid_ready(interaction: discord.Interaction, min_ilvl: int = 270
     embed.add_field(name="❌ Nachbessern (Rolle entzogen)", value="\n".join(not_ready_list) or "Niemand", inline=False)
     
     await interaction.followup.send(embed=embed)
-    
-    bot.run(os.getenv('DISCORD_TOKEN'))
+bot.run(os.getenv('DISCORD_TOKEN'))
