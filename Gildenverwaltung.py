@@ -13,6 +13,7 @@ FORUM_CHANNEL_ID = int(os.getenv('FORUM_CHANNEL_ID') or 0)
 MITGLIED_ROLLE_ID = int(os.getenv('MITGLIED_ROLLE_ID') or 0)
 BEWERBER_ROLLE_ID = int(os.getenv('BEWERBER_ROLLE_ID') or 0)
 GAST_ROLLE_ID = int(os.getenv('GAST_ROLLE_ID') or 0)
+SERVER_ID = int(os.getenv('SERVER_ID') or 0)
 REGION = "eu"
 
 def get_raid_week_dates():
@@ -189,10 +190,18 @@ class GildenBot(commands.Bot):
         intents.members = True
         super().__init__(command_prefix="!", intents=intents)
     
-    async def setup_hook(self):
+async def setup_hook(self):
         self.add_view(GildenLeitungView())
         self.add_view(RaidPollView())
-        await self.tree.sync()
+        
+        # Ersetze 1234567890 durch deine echte Server-ID:
+        MY_GUILD = discord.Object(id=SERVER_ID) 
+        
+        # Kopiert die Befehle direkt in deinen Server (geht sofort!)
+        self.tree.copy_global_to(guild=MY_GUILD)
+        await self.tree.sync(guild=MY_GUILD)
+        
+        print(f"Befehle für Server {MY_GUILD.id} synchronisiert.")
 
     # --- RAID READY COMMAND (INNERHALB DER KLASSE) ---
     @app_commands.command(name="check_raid_ready", description="Prüft Gear-Stand aller Mitglieder & Bewerber")
