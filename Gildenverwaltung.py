@@ -398,15 +398,41 @@ async def remove_char(interaction: discord.Interaction, user: discord.Member, ch
     
     await interaction.response.send_message("❌ Charakter nicht gefunden.", ephemeral=True)
 
-@bot.tree.command(name="list_members", description="Zeigt alle User und deren Charaktere")
+@bot.tree.command(name="list_members", description="Zeigt eine übersichtliche Liste aller Mitglieder")
 async def list_members(interaction: discord.Interaction):
     db = load_db()
-    if not db: return await interaction.response.send_message("Datenbank ist leer.")
+    if not db:
+        return await interaction.response.send_message("Die Datenbank ist noch leer.")
     
-    embed = discord.Embed(title="🛡️ Gilden-Datenbank", color=discord.Color.gold())
-    for uid, data in db.items():
-        char_list = "\n".join([f"• {c['name']} ({c['realm']})" for c in data['chars']]) or "Keine Chars"
-        embed.add_field(name=f"Spieler: {interaction.guild.get_member(int(uid)).display_name if interaction.guild.get_member(int(uid)) else uid}", value=char_list, inline=False)
+    embed = discord.Embed(
+        title="🛡️ Gilden-Datenbank | Mitglieder & Chars",
+        color=discord.Color.blue(),
+        timestamp=datetime.now()
+    )
+    
+    # Wir sortieren die IDs alphabetisch nach dem Discord-Namen für bessere Ordnung
+    sorted_members = sorted(db.items(), key=lambda x: (interaction.guild.get_member(int(x[0])).display_name if interaction.guild.get_member(int(x[0])) else "Unbekannt"))
+
+    for uid, data in sorted_members:
+        member = interaction.guild.get_member(int(uid))
+        name = member.display_name if member else f"ID: {uid}"
+        
+        # Charaktere kompakt formatieren: "Name (Server), Name (Server)"
+        chars = data.get("chars", [])
+        if chars:
+            char_text = "\n".join([f"🔹 {c['name']} - *{c['realm']}*" for c in chars])
+        else:
+            char_text = "❌ Keine Charaktere"
+
+        # 'inline=True' sorgt dafür, dass Discord (wenn Platz ist) Spalten bildet
+        embed.add_field(
+            name=f"👤 {name}",
+            value=char_text,
+            inline=True 
+        )
+
+    # Ein kleiner Footer macht das Ganze professioneller
+    embed.set_footer(text=f"Gesamtanzahl Spieler: {len(db)}")
     
     await interaction.response.send_message(embed=embed)
 
@@ -456,4 +482,16 @@ async def check_raid_ready(interaction: discord.Interaction, min_ilvl: int = 270
         await interaction.followup.send("Ergebnis ist zu lang für Discord, bitte iLvl Check verfeinern.")
     else:
         await interaction.followup.send(embed=discord.Embed(title="Raid-Ready Check", description=full_text, color=discord.Color.blue()))
+
+@bot.tree.command(name="whois", description="Zeigt alle Charaktere eines bestimmten Users")
+async def whois(interaction: discord.Interaction, user: discord.Member):
+    db = load_db()
+    uid = str(user.id)
+    if uid not in db or not db[uid]["chars"]:
+        return await interaction.response.send_message(f"{user.display_name} hat keine registrierten Charaktere.", ephemeral=True)
+    
+    chars = "\n".join([f"✅ {c['name']} ({c['realm']})" for c in db[uid]["chars"]])
+    embed = discord.Embed(title=f"Charaktere von {user.display_name}", description=chars, color=discord.Color.green())
+    await interaction.response.send_message(embed=embed)
+    
 bot.run(os.getenv('DISCORD_TOKEN'))
