@@ -7,18 +7,23 @@ import aiohttp
 import asyncio
 from datetime import datetime
 
+# Persistent View: Bleibt auch nach Neustart aktiv
 class DashboardView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="Jetzt aktualisieren 🔄", style=discord.ButtonStyle.primary, custom_id="dashboard_refresh_btn")
+    @discord.ui.button(
+        label="Jetzt aktualisieren 🔄", 
+        style=discord.ButtonStyle.primary, 
+        custom_id="dashboard_refresh_btn"
+    )
     async def refresh_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         cog = interaction.client.get_cog("Dashboard")
         if cog:
             await interaction.response.send_message("🔄 Gear-Check läuft...", ephemeral=True)
             await cog.refresh_dashboard_logic()
         else:
-            await interaction.response.send_message("❌ Fehler: Modul nicht gefunden.", ephemeral=True)
+            await interaction.response.send_message("❌ Fehler: Modul 'Dashboard' nicht gefunden.", ephemeral=True)
 
 class Dashboard(commands.Cog):
     def __init__(self, bot):
@@ -50,7 +55,8 @@ class Dashboard(commands.Cog):
                         "missing": missing,
                         "class": data.get('class', 'Unbekannt')
                     }
-        except:
+        except Exception as e:
+            print(f"API Fehler ({name}): {e}")
             return None
         return None
 
@@ -67,13 +73,11 @@ class Dashboard(commands.Cog):
             config = json.load(f)
         
         channel = self.bot.get_channel(config['channel_id'])
-        if not channel:
-            return
+        if not channel: return
             
         try:
             message = await channel.fetch_message(config['message_id'])
-        except:
-            return
+        except: return
 
         db = self.load_db()
         ready_list = []
@@ -82,20 +86,16 @@ class Dashboard(commands.Cog):
         async with aiohttp.ClientSession() as session:
             for uid, data in db.items():
                 chars = data.get('chars', [])
-                if not chars:
-                    continue
+                if not chars: continue
                 
-                # Nur den Main (Index 0) prüfen
                 main = chars[0]
                 res = await self.fetch_gear(session, main['realm'], main['name'])
                 
                 if res:
                     member = channel.guild.get_member(int(uid))
-                    # Discord Name oder Char-Name, max 12 Zeichen für die Tabelle
                     display_name = (member.display_name if member else main['name'])[:12]
                     is_ready = res['ilvl'] >= 265 and not res['missing']
                     
-                    # Zeile formatieren: ILVL | Name | Klasse
                     row = f"{res['ilvl']} | {display_name:<12} | {res['class']}"
                     
                     if is_ready:
@@ -128,18 +128,18 @@ class Dashboard(commands.Cog):
             )
 
         embed.set_footer(text=f"Letztes Update: {datetime.now().strftime('%H:%M')} Uhr")
-        
         await message.edit(embed=embed, view=DashboardView())
 
-    @app_commands.command(name="setup_dashboard", description="Erstellt das neue, smarte Dashboard")
+    @app_commands.command(name="setup_dashboard", description="Erstellt das Dashboard")
     async def setup_dashboard(self, interaction: discord.Interaction):
+        # Wiederherstellung der Variablen-Prüfung
         offizier_id = int(os.getenv('OFFIZIER_ROLLE_ID') or 0)
         if not any(r.id == offizier_id for r in interaction.user.roles):
             return await interaction.response.send_message("❌ Nur für Offiziere!", ephemeral=True)
 
         await interaction.response.send_message("Dashboard wird initialisiert...", ephemeral=True)
         
-        embed = discord.Embed(title="🛡️ RAID-BEREITSCHAFT", description="Lade Daten von Raider.io...")
+        embed = discord.Embed(title="🛡️ RAID-BEREITSCHAFT", description="Lade Daten...")
         msg = await interaction.channel.send(embed=embed, view=DashboardView())
         
         with open(self.config_path, "w") as f:
@@ -148,4 +148,7 @@ class Dashboard(commands.Cog):
         await self.refresh_dashboard_logic()
 
 async def setup(bot):
-    await bot.add_cog(Dashboard(bot))
+    cog = Dashboard(bot)
+    await bot.add_cog(cog)
+    # Registriert die View global, damit Buttons nach Neustart funktionieren
+    bot.add_view(DashboardView())
