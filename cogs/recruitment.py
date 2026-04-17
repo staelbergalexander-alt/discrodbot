@@ -78,7 +78,7 @@ class ThreadActionView(discord.ui.View):
 
 class SuperQuickModal(discord.ui.Modal, title='Neuer Gilden-Eintrag'):
     rio_link = discord.ui.TextInput(label='Raider.io Link', placeholder='Link einfügen...', required=True)
-    real_name = discord.ui.TextInput(label='Vorname / Spielername', placeholder='z.B. Trav', required=True)
+    real_name = discord.ui.TextInput(label='Vorname / Spielername', placeholder='z.B. Alex', required=True)
 
     def __init__(self, cog):
         super().__init__()
