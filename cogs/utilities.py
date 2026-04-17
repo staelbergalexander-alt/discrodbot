@@ -38,6 +38,7 @@ class Utilities(commands.Cog):
 
 class RaidPollView(discord.ui.View):
     def __init__(self):
+        # timeout=None ist wichtig, damit die View nicht abläuft!
         super().__init__(timeout=None)
         self.days = ["Donnerstag", "Freitag", "Samstag", "Sonntag", "Montag", "Dienstag", "Mittwoch"]
 
@@ -55,19 +56,26 @@ class RaidPollView(discord.ui.View):
         embed.set_field_at(day_idx, name=f"{self.days[day_idx]} ({len(voters)})", value=new_value, inline=False)
         await interaction.response.edit_message(embed=embed)
 
-    @discord.ui.button(label="Do", style=discord.ButtonStyle.gray)
+    # Hier vergeben wir feste custom_ids für jeden Tag
+    @discord.ui.button(label="Do", style=discord.ButtonStyle.gray, custom_id="poll_do")
     async def b0(self, i, b): await self.handle_vote(i, 0)
-    @discord.ui.button(label="Fr", style=discord.ButtonStyle.gray)
+    
+    @discord.ui.button(label="Fr", style=discord.ButtonStyle.gray, custom_id="poll_fr")
     async def b1(self, i, b): await self.handle_vote(i, 1)
-    @discord.ui.button(label="Sa", style=discord.ButtonStyle.gray)
+    
+    @discord.ui.button(label="Sa", style=discord.ButtonStyle.gray, custom_id="poll_sa")
     async def b2(self, i, b): await self.handle_vote(i, 2)
-    @discord.ui.button(label="So", style=discord.ButtonStyle.gray)
+    
+    @discord.ui.button(label="So", style=discord.ButtonStyle.gray, custom_id="poll_so")
     async def b3(self, i, b): await self.handle_vote(i, 3)
-    @discord.ui.button(label="Mo", style=discord.ButtonStyle.gray)
+    
+    @discord.ui.button(label="Mo", style=discord.ButtonStyle.gray, custom_id="poll_mo")
     async def b4(self, i, b): await self.handle_vote(i, 4)
-    @discord.ui.button(label="Di", style=discord.ButtonStyle.gray)
+    
+    @discord.ui.button(label="Di", style=discord.ButtonStyle.gray, custom_id="poll_di")
     async def b5(self, i, b): await self.handle_vote(i, 5)
-    @discord.ui.button(label="Mi", style=discord.ButtonStyle.gray)
+    
+    @discord.ui.button(label="Mi", style=discord.ButtonStyle.gray, custom_id="poll_mi")
     async def b6(self, i, b): await self.handle_vote(i, 6)
 
 async def setup(bot):
