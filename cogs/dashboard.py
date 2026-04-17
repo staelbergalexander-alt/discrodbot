@@ -80,27 +80,37 @@ class Dashboard(commands.Cog):
 
         ready_list, working_list = [], []
         
+       # ... (vorheriger Code im Dashboard Cog)
         async with aiohttp.ClientSession() as session:
             for uid, data in db.items():
-                for char in data.get('chars', []):
-                    res = await self.fetch_gear(session, char['realm'], char['name'])
-                    if res:
-                        # Kriterien: iLvl >= 265 und KEINE fehlenden VZ
-                        is_ready = res['ilvl'] >= 265 and not res['missing']
-                        status = "✅" if is_ready else "⚠️"
-                        line = f"{status} **{char['name']}** ({res['class']}) - iLvl: {res['ilvl']}"
-                        
-                        if is_ready:
-                            ready_list.append(line)
-                        else:
-                            # Grund für Warnung hinzufügen
-                            reasons = []
-                            if res['ilvl'] < 265: reasons.append("iLvl niedrig")
-                            if res['missing']: reasons.append("VZ fehlt")
-                            working_list.append(f"{line} *({', '.join(reasons)})*")
+                chars = data.get('chars', [])
+                if not chars:
+                    continue
+
+                # SMART: Wir nehmen NUR den ersten Charakter (den Main)
+                main_char = chars[0]
+                
+                res = await self.fetch_gear(session, main_char['realm'], main_char['name'])
+                if res:
+                    is_ready = res['ilvl'] >= 265 and not res['missing']
+                    status = "✅" if is_ready else "⚠️"
                     
-                    # Kleiner Delay gegen API-Rate-Limits
-                    await asyncio.sleep(0.3)
+                    # Wir holen den Discord-Namen für das Dashboard
+                    member = channel.guild.get_member(int(uid))
+                    display_name = member.display_name if member else main_char['name']
+                    
+                    line = f"{status} **{display_name}** ({res['class']}) - iLvl: {res['ilvl']}"
+                    
+                    if is_ready:
+                        ready_list.append(line)
+                    else:
+                        reasons = []
+                        if res['ilvl'] < 265: reasons.append("iLvl niedrig")
+                        if res['missing']: reasons.append("VZ fehlt")
+                        working_list.append(f"{line} *({', '.join(reasons)})*")
+                
+                await asyncio.sleep(0.3)
+        # ... (restlicher Code zum Senden des Embeds)
 
         embed = discord.Embed(
             title="⚔️ RAID-READY DASHBOARD", 
