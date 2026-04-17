@@ -30,6 +30,12 @@ class Dashboard(commands.Cog):
     def cog_unload(self):
         self.refresh_task.cancel()
 
+    def load_db(self):
+        if os.path.exists(self.db_path):
+            with open(self.db_path, "r") as f:
+                return json.load(f)
+        return {}
+
     async def fetch_gear(self, session, realm, name):
         url = f"https://raider.io/api/v1/characters/profile?region=eu&realm={realm}&name={name}&fields=gear"
         try:
@@ -44,77 +50,85 @@ class Dashboard(commands.Cog):
                         "missing": missing,
                         "class": data.get('class', 'Unbekannt')
                     }
-        except: return None
+        except:
+            return None
         return None
 
     @tasks.loop(minutes=30)
     async def refresh_task(self):
         await self.refresh_dashboard_logic()
 
-async def refresh_dashboard_logic(self):
+    async def refresh_dashboard_logic(self):
         await self.bot.wait_until_ready()
-        if not os.path.exists(self.config_path): return
+        if not os.path.exists(self.config_path):
+            return
+            
         with open(self.config_path, "r") as f:
             config = json.load(f)
         
         channel = self.bot.get_channel(config['channel_id'])
-        if not channel: return
-        try: message = await channel.fetch_message(config['message_id'])
-        except: return
+        if not channel:
+            return
+            
+        try:
+            message = await channel.fetch_message(config['message_id'])
+        except:
+            return
 
-        if not os.path.exists(self.db_path): return
-        with open(self.db_path, "r") as f:
-            db = json.load(f)
-
-        # Kategorien initialisieren
-        sections = {"Tanks": [], "Heals": [], "DPS": [], "In Arbeit": []}
+        db = self.load_db()
+        ready_list = []
+        working_list = []
 
         async with aiohttp.ClientSession() as session:
             for uid, data in db.items():
                 chars = data.get('chars', [])
-                if not chars: continue
+                if not chars:
+                    continue
                 
+                # Nur den Main (Index 0) prüfen
                 main = chars[0]
                 res = await self.fetch_gear(session, main['realm'], main['name'])
                 
                 if res:
                     member = channel.guild.get_member(int(uid))
-                    display_name = (member.display_name if member else main['name'])[:12] # Kürzen für Tabelle
+                    # Discord Name oder Char-Name, max 12 Zeichen für die Tabelle
+                    display_name = (member.display_name if member else main['name'])[:12]
                     is_ready = res['ilvl'] >= 265 and not res['missing']
                     
-                    # Formatierung für die Tabelle: ILVL | Name | Klasse
-                    # {:<3} sorgt für feste Breite
+                    # Zeile formatieren: ILVL | Name | Klasse
                     row = f"{res['ilvl']} | {display_name:<12} | {res['class']}"
                     
                     if is_ready:
-                        cls = res['class'].lower()
-                        if any(k in cls for k in ['protection', 'guardian', 'brewmaster', 'vengeance', 'blood']):
-                            sections["Tanks"].append(row)
-                        elif any(k in cls for k in ['restoration', 'holy', 'preservation', 'mistweaver', 'discipline']):
-                            sections["Heals"].append(row)
-                        else:
-                            sections["DPS"].append(row)
+                        ready_list.append(row)
                     else:
-                        reason = "VZ!" if res['missing'] else "LVL"
-                        if res['missing'] and res['ilvl'] < 265: reason = "BEIDES"
-                        sections["In Arbeit"].append(f"{res['ilvl']} | {display_name:<12} | {reason}")
+                        info = "VZ fehlt" if res['missing'] else "iLvl"
+                        if res['missing'] and res['ilvl'] < 265:
+                            info = "iLvl/VZ"
+                        working_list.append(f"{res['ilvl']} | {display_name:<12} | {info}")
                 
                 await asyncio.sleep(0.2)
 
         embed = discord.Embed(title="🛡️ RAID-BEREITSCHAFT ÜBERSICHT", color=0x2b2d31)
+        embed.description = "Anforderung: **iLvl 265+** & **Voll verzaubert**\n\u200b"
         
-        # Jede Sektion in einen eigenen Code-Block für Tabellen-Optik
-        for title, lines in sections.items():
-            if lines:
-                icon = "🔹" if title == "Tanks" else "💚" if title == "Heals" else "⚔️" if title == "DPS" else "⚠️"
-                content = "\n".join(lines)
-                embed.add_field(
-                    name=f"{icon} {title.upper()}", 
-                    value=f"```py\nILVL | NAME         | INFO\n{'-'*30}\n{content}```", 
-                    inline=False
-                )
+        if ready_list:
+            content = "\n".join(ready_list)
+            embed.add_field(
+                name="✅ BEREIT", 
+                value=f"```py\nILVL | NAME         | KLASSE\n{'-'*30}\n{content}```", 
+                inline=False
+            )
+            
+        if working_list:
+            content_work = "\n".join(working_list)
+            embed.add_field(
+                name="⚠️ IN ARBEIT", 
+                value=f"```py\nILVL | NAME         | FEHLT\n{'-'*30}\n{content_work}```", 
+                inline=False
+            )
 
-        embed.set_footer(text=f"Letztes Update: {datetime.now().strftime('%H:%M:%S')} Uhr • Anforderung: 265+ & VZ")
+        embed.set_footer(text=f"Letztes Update: {datetime.now().strftime('%H:%M')} Uhr")
+        
         await message.edit(embed=embed, view=DashboardView())
 
     @app_commands.command(name="setup_dashboard", description="Erstellt das neue, smarte Dashboard")
@@ -123,8 +137,9 @@ async def refresh_dashboard_logic(self):
         if not any(r.id == offizier_id for r in interaction.user.roles):
             return await interaction.response.send_message("❌ Nur für Offiziere!", ephemeral=True)
 
-        await interaction.response.send_message("Dashboard wird erstellt...", ephemeral=True)
-        embed = discord.Embed(title="⚔️ Dashboard", description="Lade Daten...")
+        await interaction.response.send_message("Dashboard wird initialisiert...", ephemeral=True)
+        
+        embed = discord.Embed(title="🛡️ RAID-BEREITSCHAFT", description="Lade Daten von Raider.io...")
         msg = await interaction.channel.send(embed=embed, view=DashboardView())
         
         with open(self.config_path, "w") as f:
