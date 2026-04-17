@@ -5,6 +5,7 @@ import os
 import json
 import aiohttp
 import asyncio
+import pytz
 from datetime import datetime
 
 # Persistent View: Bleibt auch nach Neustart aktiv
@@ -126,8 +127,9 @@ class Dashboard(commands.Cog):
                 value=f"```py\nILVL | NAME         | FEHLT\n{'-'*30}\n{content_work}```", 
                 inline=False
             )
-
-        embed.set_footer(text=f"Letztes Update: {datetime.now().strftime('%H:%M')} Uhr")
+        timezone = pytz.timezone("Europe/Berlin")
+        berlin_now = datetime.now(timezone)
+        embed.set_footer(text=f"Letztes Update: {berlin_now.strftime('%H:%M')} Uhr")
         await message.edit(embed=embed, view=DashboardView())
 
     @app_commands.command(name="setup_dashboard", description="Erstellt das Dashboard")
