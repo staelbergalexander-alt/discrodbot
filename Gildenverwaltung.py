@@ -23,13 +23,34 @@ SERVER_ID = int(os.getenv('SERVER_ID') or 0)
 DB_FILE = "mitglieder_db.json"
 REGION = "eu"
 
+# Hilfs-Dict für WoW Klassen-Farben (Hex)
+CLASS_COLORS = {
+    "Death Knight": 0xC41E3A, "Demon Hunter": 0xA330C9, "Druid": 0xFF7C0A,
+    "Evoker": 0x33937F, "Hunter": 0xAAD372, "Mage": 0x3FC7EB,
+    "Monk": 0x00FF98, "Paladin": 0xF48CBA, "Priest": 0xFFFFFF,
+    "Rogue": 0xFFF468, "Shaman": 0x0070DD, "Warlock": 0x8788EE, "Warrior": 0xC69B6D
+}
+
+
 # --- KONFIGURATION ---
 DB_FOLDER = "/app/data" # Der Pfad zum Volume
 DB_FILE = os.path.join(DB_FOLDER, "mitglieder_db.json")
-
+DASHBOARD_FILE = os.path.join(DB_FOLDER, "dashboard_config.json")
 # Erstelle den Ordner, falls er im Volume noch nicht existiert
 if not os.path.exists(DB_FOLDER):
     os.makedirs(DB_FOLDER)
+
+
+
+def save_dashboard_id(msg_id, channel_id):
+    with open(DASHBOARD_FILE, "w") as f:
+        json.dump({"message_id": msg_id, "channel_id": channel_id}, f)
+
+def load_dashboard_id():
+    if os.path.exists(DASHBOARD_FILE):
+        with open(DASHBOARD_FILE, "r") as f:
+            return json.load(f)
+    return None
 
 # Der Rest der Datenbank-Funktionen bleibt gleich:
 def load_db():
@@ -92,6 +113,59 @@ async def fetch_gear_data(session, realm, name):
             "missing_enchant": missing_enchant,
             "empty_sockets": empty_sockets
         }
+
+async def update_dashboard_logic():
+    config = load_dashboard_id()
+    if not config: return
+    guild = bot.get_guild(SERVER_ID)
+    channel = guild.get_channel(config['channel_id'])
+    try: message = await channel.fetch_message(config['message_id'])
+    except: return
+
+    db = load_db()
+    min_ilvl = 265
+    
+    # Listen für die Kategorien
+    ready_chars = []
+    not_ready_chars = []
+
+    async with aiohttp.ClientSession() as session:
+        for uid, data in db.items():
+            member = guild.get_member(int(uid))
+            if not member: continue
+            
+            for char in data.get('chars', []):
+                res = await fetch_gear_data(session, char['realm'], char['name'])
+                if res:
+                    status_icon = "✅" if (res['ilvl'] >= min_ilvl and not res['missing_enchant']) else "⚠️"
+                    line = f"{status_icon} **{char['name']}** ({res['class']}) - iLvl: {res['ilvl']}"
+                    
+                    if status_icon == "✅":
+                        ready_chars.append(line)
+                    else:
+                        # Detail-Info warum nicht ready
+                        reasons = []
+                        if res['ilvl'] < min_ilvl: reasons.append(f"iLvl < {min_ilvl}")
+                        if res['missing_enchant']: reasons.append("VZ fehlt")
+                        not_ready_chars.append(f"{line} *({', '.join(reasons)})*")
+                await asyncio.sleep(0.1) # Rate-Limit Schutz
+
+    new_embed = discord.Embed(
+        title="⚔️ RAID-READY DASHBOARD ⚔️",
+        description=f"Letztes Update: <t:{int(datetime.now().timestamp())}:R>",
+        color=0x2f3136 # Dunkles Design
+    )
+
+    if ready_chars:
+        new_embed.add_field(name="🟢 EINSATZBEREIT", value="\n".join(ready_chars), inline=False)
+    
+    if not_ready_chars:
+        new_embed.add_field(name="🔴 NOCH ARBEIT ERFORDERLICH", value="\n".join(not_ready_chars), inline=False)
+
+    # Ein schönes Thumbnail vom Gildenwappen oder WoW Logo (optional)
+    new_embed.set_thumbnail(url="https://i.imgur.com/8vW9X7S.png") 
+    
+    await message.edit(embed=new_embed)
 
 # --- VIEWS ---
 class RaidPollView(discord.ui.View):
@@ -319,6 +393,19 @@ class GildenBot(commands.Bot):
                 await message.delete()
                 await asyncio.sleep(1)
 
+# In der setup_hook:
+    if not self.refresh_dashboard.is_running():
+        self.refresh_dashboard.start()
+
+    @tasks.loop(minutes=30)
+    async def refresh_dashboard(self):
+        await update_dashboard_logic()
+
+    @refresh_dashboard.before_loop
+    async def before_refresh(self):
+        await self.wait_until_ready()
+
+
 bot = GildenBot()
 
 @bot.tree.command(name="archive_logs", description="Verschiebt Logs manuell ins Archiv")
@@ -493,5 +580,20 @@ async def whois(interaction: discord.Interaction, user: discord.Member):
     chars = "\n".join([f"✅ {c['name']} ({c['realm']})" for c in db[uid]["chars"]])
     embed = discord.Embed(title=f"Charaktere von {user.display_name}", description=chars, color=discord.Color.green())
     await interaction.response.send_message(embed=embed)
+
+bot.tree.command(name="setup_dashboard", description="Erstellt das Live-Gear-Dashboard")
+async def setup_dashboard(interaction: discord.Interaction):
+    if not any(role.id == OFFIZIER_ROLLE_ID for role in interaction.user.roles):
+        return await interaction.response.send_message("❌ Keine Rechte!", ephemeral=True)
+    
+    await interaction.response.defer(ephemeral=True)
+    
+    embed = discord.Embed(title="📊 Raid-Ready Live-Dashboard", description="Initialisierung läuft...", color=discord.Color.gold())
+    msg = await interaction.channel.send(embed=embed)
+    
+    save_dashboard_id(msg.id, interaction.channel_id)
+    await interaction.followup.send("✅ Dashboard erstellt und verknüpft!")
+    # Sofort das erste Update triggern
+    await update_dashboard_logic()
     
 bot.run(os.getenv('DISCORD_TOKEN'))
