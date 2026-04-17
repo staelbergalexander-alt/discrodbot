@@ -30,33 +30,68 @@ class Utilities(commands.Cog):
     @commands.command(name="raidumfrage")
     async def raidumfrage(self, ctx):
         if any(r.id == OFFIZIER_ROLLE_ID for r in ctx.author.roles):
-            embed = discord.Embed(title="⚔️ Raid-Termine für die Woche", color=discord.Color.blue(), description="Bitte klickt auf die Tage, an denen ihr Zeit habt!")
+            # --- ZEITRAUM BERECHNEN ---
+            today = datetime.now()
+            days_until_thursday = (3 - today.weekday()) % 7
+            if days_until_thursday == 0 and today.hour > 12:
+                days_until_thursday = 7
+            
+            start_date = today + timedelta(days=days_until_thursday)
+            end_date = start_date + timedelta(days=6)
+            zeitraum = f"{start_date.strftime('%d.%m.')} - {end_date.strftime('%d.%m.')}"
+
+            # --- OPTIMIERTES EMBED ---
+            embed = discord.Embed(
+                title=f"⚔️ Raid-Planung ({zeitraum})",
+                color=0x2b2d31, # Schickes dunkles Grau/Blau
+                description="Klicke auf die Buttons unten, um dich für die Tage an- oder abzumelden."
+            )
+            
             days = ["Donnerstag", "Freitag", "Samstag", "Sonntag", "Montag", "Dienstag", "Mittwoch"]
             for d in days:
-                embed.add_field(name=f"{d} (0)", value="Keine Stimmen", inline=False)
+                # Nutzt Emojis für bessere Scannbarkeit
+                embed.add_field(name=f"📅 {d} (0)", value="---", inline=False)
+            
+            embed.set_footer(text="🔹 Blaues Icon = Angemeldet")
             await ctx.send(embed=embed, view=RaidPollView())
 
 class RaidPollView(discord.ui.View):
     def __init__(self):
-        # timeout=None ist wichtig, damit die View nicht abläuft!
         super().__init__(timeout=None)
         self.days = ["Donnerstag", "Freitag", "Samstag", "Sonntag", "Montag", "Dienstag", "Mittwoch"]
 
     async def handle_vote(self, interaction, day_idx):
         embed = interaction.message.embeds[0]
         field = embed.fields[day_idx]
-        voters = field.value.split(", ") if field.value != "Keine Stimmen" else []
         
-        if interaction.user.mention in voters:
-            voters.remove(interaction.user.mention)
+        # Namen kompakt extrahieren und Emojis für die Logik entfernen
+        current_value = field.value
+        if current_value == "---":
+            voters = []
         else:
-            voters.append(interaction.user.mention)
+            voters = [v.replace("🔹 ", "").strip() for v in current_value.split(" • ")]
         
-        new_value = ", ".join(voters) if voters else "Keine Stimmen"
-        embed.set_field_at(day_idx, name=f"{self.days[day_idx]} ({len(voters)})", value=new_value, inline=False)
+        user_mention = interaction.user.mention
+        
+        if user_mention in voters:
+            voters.remove(user_mention)
+        else:
+            voters.append(user_mention)
+        
+        # Neue Anzeige: "🔹 @Name • 🔹 @Name" statt untereinander
+        if voters:
+            new_value = " • ".join([f"🔹 {v}" for v in voters])
+        else:
+            new_value = "---"
+            
+        embed.set_field_at(
+            day_idx, 
+            name=f"📅 {self.days[day_idx]} ({len(voters)})", 
+            value=new_value, 
+            inline=False
+        )
         await interaction.response.edit_message(embed=embed)
 
-    # Hier vergeben wir feste custom_ids für jeden Tag
     @discord.ui.button(label="Do", style=discord.ButtonStyle.gray, custom_id="poll_do")
     async def b0(self, i, b): await self.handle_vote(i, 0)
     
