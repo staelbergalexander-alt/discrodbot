@@ -52,13 +52,22 @@ class DeclineReasonModal(discord.ui.Modal, title='Bewerbung ablehnen'):
 # --- VIEWS ---
 
 class ThreadActionView(discord.ui.View):
-    def __init__(self, member_id):
+    # member_id=None erlaubt das Laden beim Bot-Start ohne Absturz
+    def __init__(self, member_id=None):
         super().__init__(timeout=None)
         self.member_id = member_id
 
     @discord.ui.button(label="Annehmen ✅", style=discord.ButtonStyle.success, custom_id="acc_btn")
     async def accept(self, interaction: discord.Interaction, button: discord.ui.Button):
-        member = interaction.guild.get_member(self.member_id)
+        # ID-Logik: Nutze self.member_id ODER finde den User in der Nachricht
+        target_id = self.member_id
+        if target_id is None and interaction.message.mentions:
+            target_id = interaction.message.mentions[0].id
+
+        if not target_id:
+            return await interaction.response.send_message("❌ Fehler: Mitglieds-ID nicht gefunden (Neustart-Problem).", ephemeral=True)
+
+        member = interaction.guild.get_member(target_id)
         if member:
             m_role = interaction.guild.get_role(MITGLIED_ROLLE_ID)
             b_role = interaction.guild.get_role(BEWERBER_ROLLE_ID)
@@ -66,7 +75,6 @@ class ThreadActionView(discord.ui.View):
             if b_role: await member.remove_roles(b_role)
             await interaction.response.send_message(f"✅ {member.mention} wurde aufgenommen! Post wird archiviert...")
             
-            # Thread automatisch archivieren
             await asyncio.sleep(10)
             thread = interaction.channel
             if isinstance(thread, discord.Thread):
@@ -74,7 +82,14 @@ class ThreadActionView(discord.ui.View):
 
     @discord.ui.button(label="Ablehnen ❌", style=discord.ButtonStyle.danger, custom_id="dec_btn")
     async def decline(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(DeclineReasonModal(self.member_id))
+        target_id = self.member_id
+        if target_id is None and interaction.message.mentions:
+            target_id = interaction.message.mentions[0].id
+            
+        if not target_id:
+            return await interaction.response.send_message("❌ Fehler: ID nicht gefunden.", ephemeral=True)
+            
+        await interaction.response.send_modal(DeclineReasonModal(target_id))
 
 class SuperQuickModal(discord.ui.Modal, title='Neuer Gilden-Eintrag'):
     rio_link = discord.ui.TextInput(label='Raider.io Link', placeholder='Link einfügen...', required=True)
@@ -129,6 +144,7 @@ class SuperQuickModal(discord.ui.Modal, title='Neuer Gilden-Eintrag'):
                     embed.add_field(name="Links", value=f"[Raider.io]({self.rio_link.value}) | [WarcraftLogs]({wcl_link})", inline=False)
 
                     thread_data = await forum.create_thread(name=f"{name} | {self.real_name.value}", embed=embed)
+                    # Hier wird die member_id fest vergeben für die aktuelle Sitzung
                     await thread_data.thread.send(content=f"💡 Entscheidung für {member.mention}:", view=ThreadActionView(member.id))
                 
                 await member.edit(nick=f"{name} | {self.real_name.value}")
