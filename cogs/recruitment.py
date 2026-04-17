@@ -19,7 +19,7 @@ class Recruitment(commands.Cog):
             view = GildenLeitungView(self)
             await ctx.send("### 🏰 Gildenverwaltung", view=view)
 
-# --- NEU: MODAL FÜR ABLEHNUNGS-BEGRÜNDUNG ---
+# --- MODAL FÜR ABLEHNUNGS-BEGRÜNDUNG ---
 
 class DeclineReasonModal(discord.ui.Modal, title='Bewerbung ablehnen'):
     reason = discord.ui.TextInput(
@@ -35,7 +35,6 @@ class DeclineReasonModal(discord.ui.Modal, title='Bewerbung ablehnen'):
         self.member_id = member_id
 
     async def on_submit(self, interaction: discord.Interaction):
-        # Hier posten wir die Begründung in den Thread
         embed = discord.Embed(
             title="❌ Bewerbung abgelehnt",
             description=f"**Grund:** {self.reason.value}",
@@ -43,9 +42,12 @@ class DeclineReasonModal(discord.ui.Modal, title='Bewerbung ablehnen'):
             timestamp=datetime.now()
         )
         await interaction.response.send_message(embed=embed)
-        # Der Thread könnte hier nach einer Verzögerung automatisch geschlossen werden
+        
+        # Thread automatisch archivieren
         await asyncio.sleep(10)
-        # await interaction.channel.edit(archived=True, locked=True) # Optional: Archivieren
+        thread = interaction.channel
+        if isinstance(thread, discord.Thread):
+            await thread.edit(archived=True, locked=True)
 
 # --- VIEWS ---
 
@@ -62,11 +64,16 @@ class ThreadActionView(discord.ui.View):
             b_role = interaction.guild.get_role(BEWERBER_ROLLE_ID)
             if m_role: await member.add_roles(m_role)
             if b_role: await member.remove_roles(b_role)
-            await interaction.response.send_message(f"✅ {member.mention} wurde aufgenommen!")
+            await interaction.response.send_message(f"✅ {member.mention} wurde aufgenommen! Post wird archiviert...")
+            
+            # Thread automatisch archivieren
+            await asyncio.sleep(10)
+            thread = interaction.channel
+            if isinstance(thread, discord.Thread):
+                await thread.edit(archived=True, locked=True)
 
     @discord.ui.button(label="Ablehnen ❌", style=discord.ButtonStyle.danger, custom_id="dec_btn")
     async def decline(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Öffnet das Modal für die Begründung
         await interaction.response.send_modal(DeclineReasonModal(self.member_id))
 
 class SuperQuickModal(discord.ui.Modal, title='Neuer Gilden-Eintrag'):
@@ -86,7 +93,6 @@ class SuperQuickModal(discord.ui.Modal, title='Neuer Gilden-Eintrag'):
         
         srv, name = match.group(1).capitalize(), match.group(2).capitalize()
         char_class = "Unbekannt"
-        # Automatischer WCL Link
         wcl_link = f"https://www.warcraftlogs.com/character/eu/{match.group(1)}/{match.group(2)}"
         
         async with aiohttp.ClientSession() as session:
@@ -104,13 +110,15 @@ class SuperQuickModal(discord.ui.Modal, title='Neuer Gilden-Eintrag'):
             member = interaction.guild.get_member(int(uid))
             
             if member:
+                b_role = interaction.guild.get_role(BEWERBER_ROLLE_ID)
+                if b_role: await member.add_roles(b_role)
+                
                 with open(DB_FILE, "r") as f: db_data = json.load(f)
                 db_data[str(member.id)] = {"chars": [{"name": name, "realm": srv}]}
                 with open(DB_FILE, "w") as f: json.dump(db_data, f, indent=4)
                 
                 forum = interaction.guild.get_channel(FORUM_CHANNEL_ID)
                 if forum:
-                    # Layout wie im gewünschten Screenshot
                     embed = discord.Embed(title=f"🛡️ Neuer Eintrag: {name}", color=discord.Color.blue(), timestamp=datetime.now())
                     embed.add_field(name="Datum", value=datetime.now().strftime("%d.%m.%Y"), inline=True)
                     embed.add_field(name="Erstellt von", value=interaction.user.display_name, inline=True)
@@ -119,7 +127,6 @@ class SuperQuickModal(discord.ui.Modal, title='Neuer Gilden-Eintrag'):
                     embed.add_field(name="Links", value=f"[Raider.io]({self.rio_link.value}) | [WarcraftLogs]({wcl_link})", inline=False)
 
                     thread_data = await forum.create_thread(name=f"{name} | {self.real_name.value}", embed=embed)
-                    # Senden der Entscheidungs-Nachricht mit beiden Buttons
                     await thread_data.thread.send(content=f"💡 Entscheidung für {member.mention}:", view=ThreadActionView(member.id))
                 
                 await member.edit(nick=f"{name} | {self.real_name.value}")
