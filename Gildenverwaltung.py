@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 import os
 import json
+from cogs.utilities import RaidPollView
 
 # IDs aus Railway laden
 SERVER_ID = int(os.getenv('SERVER_ID') or 0)
@@ -48,5 +49,13 @@ class GildenBot(commands.Bot):
             self.tree.copy_global_to(guild=guild)
             await self.tree.sync(guild=guild)
 
+async def setup_hook(self):
+        # 1. Die View persistent registrieren
+        # Das sorgt dafür, dass die Buttons nach einem Neustart funktionieren!
+        self.add_view(RaidPollView())
+    for filename in os.listdir('./cogs'):
+            if filename.endswith('.py'):
+                await self.load_extension(f'cogs.{filename[:-3]}')
+                
 bot = GildenBot()
 bot.run(TOKEN)
