@@ -19,7 +19,35 @@ class Recruitment(commands.Cog):
             view = GildenLeitungView(self)
             await ctx.send("### 🏰 Gildenverwaltung", view=view)
 
-# --- VIEWS & MODALS ---
+# --- NEU: MODAL FÜR ABLEHNUNGS-BEGRÜNDUNG ---
+
+class DeclineReasonModal(discord.ui.Modal, title='Bewerbung ablehnen'):
+    reason = discord.ui.TextInput(
+        label='Begründung',
+        style=discord.TextStyle.paragraph,
+        placeholder='Z.B. Gear reicht noch nicht ganz aus...',
+        required=True,
+        max_length=500
+    )
+
+    def __init__(self, member_id):
+        super().__init__()
+        self.member_id = member_id
+
+    async def on_submit(self, interaction: discord.Interaction):
+        # Hier posten wir die Begründung in den Thread
+        embed = discord.Embed(
+            title="❌ Bewerbung abgelehnt",
+            description=f"**Grund:** {self.reason.value}",
+            color=discord.Color.red(),
+            timestamp=datetime.now()
+        )
+        await interaction.response.send_message(embed=embed)
+        # Der Thread könnte hier nach einer Verzögerung automatisch geschlossen werden
+        await asyncio.sleep(10)
+        # await interaction.channel.edit(archived=True, locked=True) # Optional: Archivieren
+
+# --- VIEWS ---
 
 class ThreadActionView(discord.ui.View):
     def __init__(self, member_id):
@@ -36,25 +64,29 @@ class ThreadActionView(discord.ui.View):
             if b_role: await member.remove_roles(b_role)
             await interaction.response.send_message(f"✅ {member.mention} wurde aufgenommen!")
 
+    @discord.ui.button(label="Ablehnen ❌", style=discord.ButtonStyle.danger, custom_id="dec_btn")
+    async def decline(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Öffnet das Modal für die Begründung
+        await interaction.response.send_modal(DeclineReasonModal(self.member_id))
+
 class SuperQuickModal(discord.ui.Modal, title='Neuer Gilden-Eintrag'):
     rio_link = discord.ui.TextInput(label='Raider.io Link', placeholder='Link einfügen...', required=True)
-    real_name = discord.ui.TextInput(label='Vorname / Spielername', placeholder='z.B. Alex', required=True)
+    real_name = discord.ui.TextInput(label='Vorname / Spielername', placeholder='z.B. Trav', required=True)
 
     def __init__(self, cog):
         super().__init__()
         self.cog = cog
 
     async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.send_message("⌛ Daten werden von Raider.io abgerufen...", ephemeral=True)
+        await interaction.response.send_message("⌛ Daten werden abgerufen...", ephemeral=True)
         
         match = re.search(r'characters/eu/([^/]+)/([^/]+)', self.rio_link.value.lower())
         if not match:
             return await interaction.followup.send("❌ Ungültiger Raider.io Link!", ephemeral=True)
         
         srv, name = match.group(1).capitalize(), match.group(2).capitalize()
-        
-        # --- AUTOMATISCHER DATEN-ABRUF (Klasse & Logs) ---
         char_class = "Unbekannt"
+        # Automatischer WCL Link
         wcl_link = f"https://www.warcraftlogs.com/character/eu/{match.group(1)}/{match.group(2)}"
         
         async with aiohttp.ClientSession() as session:
@@ -63,7 +95,6 @@ class SuperQuickModal(discord.ui.Modal, title='Neuer Gilden-Eintrag'):
                     data = await resp.json()
                     char_class = data.get('class', 'Unbekannt')
 
-        # User-Erwähnung abfragen
         prompt = await interaction.channel.send(f"👉 Bitte erwähne jetzt den Discord-User (@Name) für **{name}**!")
         def check(m): return m.author == interaction.user and m.channel == interaction.channel
         
@@ -73,14 +104,13 @@ class SuperQuickModal(discord.ui.Modal, title='Neuer Gilden-Eintrag'):
             member = interaction.guild.get_member(int(uid))
             
             if member:
-                # Datenbank Update
                 with open(DB_FILE, "r") as f: db_data = json.load(f)
                 db_data[str(member.id)] = {"chars": [{"name": name, "realm": srv}]}
                 with open(DB_FILE, "w") as f: json.dump(db_data, f, indent=4)
                 
-                # Forum Embed
                 forum = interaction.guild.get_channel(FORUM_CHANNEL_ID)
                 if forum:
+                    # Layout wie im gewünschten Screenshot
                     embed = discord.Embed(title=f"🛡️ Neuer Eintrag: {name}", color=discord.Color.blue(), timestamp=datetime.now())
                     embed.add_field(name="Datum", value=datetime.now().strftime("%d.%m.%Y"), inline=True)
                     embed.add_field(name="Erstellt von", value=interaction.user.display_name, inline=True)
@@ -89,6 +119,7 @@ class SuperQuickModal(discord.ui.Modal, title='Neuer Gilden-Eintrag'):
                     embed.add_field(name="Links", value=f"[Raider.io]({self.rio_link.value}) | [WarcraftLogs]({wcl_link})", inline=False)
 
                     thread_data = await forum.create_thread(name=f"{name} | {self.real_name.value}", embed=embed)
+                    # Senden der Entscheidungs-Nachricht mit beiden Buttons
                     await thread_data.thread.send(content=f"💡 Entscheidung für {member.mention}:", view=ThreadActionView(member.id))
                 
                 await member.edit(nick=f"{name} | {self.real_name.value}")
