@@ -62,7 +62,7 @@ async def fetch_gear_data(session, realm, name):
         
         missing_enchant = False
         empty_sockets = 0
-        enchantable_slots = ['neck', 'back', 'chest', 'bracers', 'cloak', 'legs', 'boots', 'mainhand', 'offhand', 'finger1', 'finger2']
+        enchantable_slots = ['chest', 'legs', 'boots', 'mainhand', 'offhand', 'finger1', 'finger2', 'shoulders', 'head']
         
         for slot, info in items.items():
             if slot in enchantable_slots and info.get('enchant') is None:
@@ -343,94 +343,99 @@ async def raidumfrage(ctx):
         embed.add_field(name=f"{d} (0)", value="Keine Stimmen", inline=False)
     await ctx.send(embed=embed, view=RaidPollView())
 
-@bot.tree.command(name="add_member_rio", description="Füge ein Mitglied per Raider.io Link hinzu")
-async def add_member_rio(interaction: discord.Interaction, user: discord.Member, rio_link: str):
+@bot.tree.command(name="add_char", description="Fügt einem User einen Charakter (Main/Twink) hinzu")
+async def add_char(interaction: discord.Interaction, user: discord.Member, rio_link: str):
     if not any(role.id == OFFIZIER_ROLLE_ID for role in interaction.user.roles):
         return await interaction.response.send_message("❌ Keine Rechte!", ephemeral=True)
-    match = re.search(r"characters/eu/([^/]+)/([^/?#\s]+)", rio_link.lower())
-    if not match: return await interaction.response.send_message("❌ Ungültiger Link!", ephemeral=True)
-    
-    server, charname = match.group(1).capitalize(), match.group(2).capitalize()
-    db = load_db()
-    db[str(user.id)] = {"name": charname, "realm": server}
-    save_db(db)
-    await interaction.response.send_message(f"✅ Verknüpft: {user.mention} ↔️ **{charname}** ({server})")
 
-@bot.tree.command(name="list_members", description="Zeigt alle registrierten Mitglieder")
+    match = re.search(r"characters/eu/([^/]+)/([^/?#\s]+)", rio_link.lower())
+    if not match: return await interaction.response.send_message("❌ Link ungültig!", ephemeral=True)
+
+    realm, name = match.group(1).capitalize(), match.group(2).capitalize()
+    db = load_db()
+    uid = str(user.id)
+
+    if uid not in db: db[uid] = {"chars": []}
+    
+    # Dubletten prüfen
+    if any(c['name'] == name and c['realm'] == realm for c in db[uid]['chars']):
+        return await interaction.response.send_message(f"⚠️ **{name}** ist bereits für {user.display_name} registriert.", ephemeral=True)
+
+    db[uid]['chars'].append({"name": name, "realm": realm})
+    save_db(db)
+    await interaction.response.send_message(f"✅ **{name}-{realm}** wurde für {user.mention} hinzugefüga.")
+
+@bot.tree.command(name="remove_char", description="Entfernt einen spezifischen Charakter eines Users")
+async def remove_char(interaction: discord.Interaction, user: discord.Member, char_name: str):
+    if not any(role.id == OFFIZIER_ROLLE_ID for role in interaction.user.roles): return
+    
+    db = load_db()
+    uid = str(user.id)
+    if uid in db:
+        initial_len = len(db[uid]['chars'])
+        db[uid]['chars'] = [c for c in db[uid]['chars'] if c['name'].lower() != char_name.lower()]
+        if len(db[uid]['chars']) < initial_len:
+            save_db(db)
+            return await interaction.response.send_message(f"🗑️ Charakter **{char_name}** für {user.display_name} gelöscht.")
+    
+    await interaction.response.send_message("❌ Charakter nicht gefunden.", ephemeral=True)
+
+@bot.tree.command(name="list_members", description="Zeigt alle User und deren Charaktere")
 async def list_members(interaction: discord.Interaction):
     db = load_db()
-    if not db: return await interaction.response.send_message("Die Liste ist leer.", ephemeral=True)
-    liste = [f"• <@{uid}>: **{info['name']}** ({info['realm']})" for uid, info in db.items()]
-    await interaction.response.send_message(embed=discord.Embed(title="Mitglieder", description="\n".join(liste), color=discord.Color.gold()))
+    if not db: return await interaction.response.send_message("Datenbank ist leer.")
     
-@bot.tree.command(name="remove_member", description="Löscht ein Mitglied aus der Raid-Datenbank")
-@app_commands.describe(user="Der Discord-User, der entfernt werden soll")
-async def remove_member(interaction: discord.Interaction, user: discord.Member):
-    # Prüfung auf Offizier-Rechte
-    if not any(role.id == OFFIZIER_ROLLE_ID for role in interaction.user.roles):
-        return await interaction.response.send_message("❌ Keine Rechte!", ephemeral=True)
+    embed = discord.Embed(title="🛡️ Gilden-Datenbank", color=discord.Color.gold())
+    for uid, data in db.items():
+        char_list = "\n".join([f"• {c['name']} ({c['realm']})" for c in data['chars']]) or "Keine Chars"
+        embed.add_field(name=f"Spieler: {interaction.guild.get_member(int(uid)).display_name if interaction.guild.get_member(int(uid)) else uid}", value=char_list, inline=False)
+    
+    await interaction.response.send_message(embed=embed)
 
-    db = load_db()
-    user_id_str = str(user.id)
-
-    if user_id_str in db:
-        char_info = db.pop(user_id_str)
-        save_db(db)
-        await interaction.response.send_message(
-            f"✅ **{char_info['name']}** (<@{user.id}>) wurde aus der Datenbank gelöscht.", 
-            ephemeral=False
-        )
-    else:
-        await interaction.response.send_message(
-            f"❌ Dieser User ist gar nicht in der Datenbank registriert.", 
-            ephemeral=True
-        )
-        
-@bot.tree.command(name="check_raid_ready", description="Prüft Gear und vergibt automatisch die Raid-Ready Rolle")
+@bot.tree.command(name="check_raid_ready", description="Prüft alle Charaktere auf Gear und Enchants")
 async def check_raid_ready(interaction: discord.Interaction, min_ilvl: int = 270):
     await interaction.response.defer()
-    
     db = load_db()
-    ready_list, not_ready_list = [], []
     rr_role = interaction.guild.get_role(RAID_READY_ROLLE_ID)
     
-    if not rr_role:
-        return await interaction.followup.send("⚠️ Fehler: Raid-Ready Rolle wurde nicht gefunden. Prüfe die ID!")
-
+    results = []
     async with aiohttp.ClientSession() as session:
-        for uid, info in db.items():
+        for uid, data in db.items():
             member = interaction.guild.get_member(int(uid))
             if not member: continue
+            
+            player_ready = False
+            char_statuses = []
 
-            res = await fetch_gear_data(session, info['realm'], info['name'])
-            if res:
-                warns = []
-                if res['empty_sockets'] > 0: warns.append(f"💎 {res['empty_sockets']} Gems")
-                
-                is_ready = (res['ilvl'] >= min_ilvl and not warns)
-                txt = f"<@{uid}>: **{res['ilvl']}**" + (f" ({', '.join(warns)} fehlt!)" if warns else "")
-
-                try:
-                    if is_ready:
-                        ready_list.append(f"✅ {txt}")
-                        if rr_role not in member.roles:
-                            await member.add_roles(rr_role)
+            for char in data['chars']:
+                res = await fetch_gear_data(session, char['realm'], char['name'])
+                if res:
+                    warns = []
+                    if res['ilvl'] < min_ilvl: warns.append(f"iLvl {res['ilvl']}")
+                    if res['missing_enchant']: warns.append("Enchants")
+                    if res['empty_sockets'] > 0: warns.append(f"{res['empty_sockets']} Sockets")
+                    
+                    if not warns:
+                        player_ready = True
+                        char_statuses.append(f"✅ **{char['name']}**: Ready")
                     else:
-                        not_ready_list.append(f"❌ {txt}")
-                        if rr_role in member.roles:
-                            await member.remove_roles(rr_role)
-                except Exception as e:
-                    print(f"Rollen-Fehler bei {member.display_name}: {e}")
+                        char_statuses.append(f"❌ **{char['name']}**: Fehlt: {', '.join(warns)}")
+                await asyncio.sleep(0.2)
 
-            await asyncio.sleep(0.1) # Kurze Pause gegen API-Limits
+            # Rollen-Vergabe: Wenn MINDESTENS EIN Charakter ready ist
+            try:
+                if player_ready:
+                    if rr_role and rr_role not in member.roles: await member.add_roles(rr_role)
+                else:
+                    if rr_role and rr_role in member.roles: await member.remove_roles(rr_role)
+            except: pass
 
-    embed = discord.Embed(
-        title="🛡️ Raid-Ready Status & Rollen-Update", 
-        description=f"Geprüftes Itemlevel: **{min_ilvl}+**",
-        color=discord.Color.blue()
-    )
-    embed.add_field(name="✅ Ready (Rolle vergeben)", value="\n".join(ready_list) or "Niemand", inline=False)
-    embed.add_field(name="❌ Nachbessern (Rolle entzogen)", value="\n".join(not_ready_list) or "Niemand", inline=False)
-    
-    await interaction.followup.send(embed=embed)
+            results.append(f"**{member.display_name}**:\n" + "\n".join(char_statuses))
+
+    full_text = "\n\n".join(results)
+    # Falls der Text zu lang für ein Embed ist, in mehrere Teile splitten
+    if len(full_text) > 4000:
+        await interaction.followup.send("Ergebnis ist zu lang für Discord, bitte iLvl Check verfeinern.")
+    else:
+        await interaction.followup.send(embed=discord.Embed(title="Raid-Ready Check", description=full_text, color=discord.Color.blue()))
 bot.run(os.getenv('DISCORD_TOKEN'))
