@@ -7,7 +7,7 @@ import re
 import asyncio
 import aiohttp
 from datetime import datetime
-from config import OFFIZIER_ROLLE_ID, FORUM_CHANNEL_ID, MITGLIED_ROLLE_ID, BEWERBER_ROLLE_ID, DB_FILE
+from config import OFFIZIER_ROLLE_ID, FORUM_CHANNEL_ID, MITGLIED_ROLLE_ID, BEWERBER_ROLLE_ID, DB_FILE, GAST_ROLLE_ID
 
 class Recruitment(commands.Cog):
     def __init__(self, bot):
