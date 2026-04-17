@@ -35,8 +35,26 @@ if not os.path.exists(DB_FOLDER):
 def load_db():
     if os.path.exists(DB_FILE):
         with open(DB_FILE, "r") as f: 
-            try: return json.load(f)
-            except: return {}
+            try: 
+                data = json.load(f)
+                # --- AUTO-FIX FÜR ALTE DATENSTRUKTUR ---
+                updated = False
+                for uid in data:
+                    # Wenn 'chars' fehlt, ist es ein alter Eintrag
+                    if "chars" not in data[uid]:
+                        old_name = data[uid].get("name", "Unbekannt")
+                        old_realm = data[uid].get("realm", "Unbekannt")
+                        # Umwandeln in das neue Listen-Format
+                        data[uid] = {"chars": [{"name": old_name, "realm": old_realm}]}
+                        updated = True
+                
+                if updated:
+                    save_db(data)
+                    print("✅ Datenbank erfolgreich auf das neue Twink-Format aktualisiert.")
+                return data
+            except Exception as e:
+                print(f"Fehler beim Laden der DB: {e}")
+                return {}
     return {}
 
 def save_db(data):
