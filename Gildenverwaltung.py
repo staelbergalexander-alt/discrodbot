@@ -3,9 +3,11 @@ from discord.ext import commands
 import os
 import json
 
-# Wichtig: Beide Views importieren, damit sie registriert werden können
+# Wichtig: Alle Views importieren, damit sie registriert werden können
 from cogs.utilities import RaidPollView
 from cogs.recruitment import ThreadActionView
+# HIER NEU: DashboardView importieren (Pfad anpassen, falls es in dashboard.py liegt)
+from cogs.dashboard import DashboardView 
 
 # IDs aus Railway laden
 SERVER_ID = int(os.getenv('SERVER_ID') or 0)
@@ -45,7 +47,8 @@ class GildenBot(commands.Bot):
         # 2. Permanente Views registrieren (Buttons überleben Neustart)
         self.add_view(RaidPollView())
         self.add_view(ThreadActionView())
-        print("Permanente Views (Umfrage & Recruitment) registriert.")
+        self.add_view(DashboardView()) # HIER NEU hinzugefügt
+        print("Permanente Views (Umfrage, Recruitment & Dashboard) registriert.")
 
         # 3. Cogs automatisch laden
         for filename in os.listdir('./cogs'):
