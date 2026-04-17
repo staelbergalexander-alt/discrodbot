@@ -51,7 +51,7 @@ class Dashboard(commands.Cog):
     async def refresh_task(self):
         await self.refresh_dashboard_logic()
 
-    async def refresh_dashboard_logic(self):
+async def refresh_dashboard_logic(self):
         await self.bot.wait_until_ready()
         if not os.path.exists(self.config_path): return
         with open(self.config_path, "r") as f:
@@ -66,61 +66,55 @@ class Dashboard(commands.Cog):
         with open(self.db_path, "r") as f:
             db = json.load(f)
 
-        # Listen für Kategorien
-        tanks, heals, dps, not_ready = [], [], [], []
+        # Kategorien initialisieren
+        sections = {"Tanks": [], "Heals": [], "DPS": [], "In Arbeit": []}
 
         async with aiohttp.ClientSession() as session:
             for uid, data in db.items():
                 chars = data.get('chars', [])
                 if not chars: continue
                 
-                # NUR den Main prüfen (Platz 1 in der Liste)
                 main = chars[0]
                 res = await self.fetch_gear(session, main['realm'], main['name'])
                 
                 if res:
                     member = channel.guild.get_member(int(uid))
-                    display_name = member.display_name if member else main['name']
+                    display_name = (member.display_name if member else main['name'])[:12] # Kürzen für Tabelle
                     is_ready = res['ilvl'] >= 265 and not res['missing']
                     
-                    # Formatierte Zeile mit Code-Block für das iLvl (sieht sauberer aus)
-                    line = f"`{res['ilvl']}` **{display_name}** ({res['class']})"
+                    # Formatierung für die Tabelle: ILVL | Name | Klasse
+                    # {:<3} sorgt für feste Breite
+                    row = f"{res['ilvl']} | {display_name:<12} | {res['class']}"
                     
                     if is_ready:
                         cls = res['class'].lower()
-                        # Rollenzuweisung
-                        if cls in ['death knight', 'guardian druid', 'protection warrior', 'protection paladin', 'brewmaster monk', 'vengeance demon hunter']:
-                            tanks.append(line)
-                        elif cls in ['restoration druid', 'holy paladin', 'preservation evoker', 'mistweaver monk', 'holy priest', 'discipline priest', 'restoration shaman']:
-                            heals.append(line)
+                        if any(k in cls for k in ['protection', 'guardian', 'brewmaster', 'vengeance', 'blood']):
+                            sections["Tanks"].append(row)
+                        elif any(k in cls for k in ['restoration', 'holy', 'preservation', 'mistweaver', 'discipline']):
+                            sections["Heals"].append(row)
                         else:
-                            dps.append(line)
+                            sections["DPS"].append(row)
                     else:
-                        reasons = []
-                        if res['ilvl'] < 265: reasons.append("iLvl")
-                        if res['missing']: reasons.append("VZ")
-                        not_ready.append(f"⚠️ **{display_name}** *({', '.join(reasons)} fehlt)*")
+                        reason = "VZ!" if res['missing'] else "LVL"
+                        if res['missing'] and res['ilvl'] < 265: reason = "BEIDES"
+                        sections["In Arbeit"].append(f"{res['ilvl']} | {display_name:<12} | {reason}")
                 
-                await asyncio.sleep(0.3)
+                await asyncio.sleep(0.2)
 
-        embed = discord.Embed(title="🛡️ RAID-READY DASHBOARD", color=0x2b2d31, timestamp=datetime.now())
-        embed.description = "Anforderung: **iLvl 265+** & **Voll verzaubert**\n\n"
+        embed = discord.Embed(title="🛡️ RAID-BEREITSCHAFT ÜBERSICHT", color=0x2b2d31)
         
-        if tanks:
-            embed.add_field(name="🔹 TANKS", value="\n".join(tanks), inline=True)
-        if heals:
-            embed.add_field(name="💚 HEILER", value="\n".join(heals), inline=True)
-        
-        # Leeres Feld für Abstände bei 2 Spalten (Optional)
-        embed.add_field(name="\u200b", value="\u200b", inline=True)
+        # Jede Sektion in einen eigenen Code-Block für Tabellen-Optik
+        for title, lines in sections.items():
+            if lines:
+                icon = "🔹" if title == "Tanks" else "💚" if title == "Heals" else "⚔️" if title == "DPS" else "⚠️"
+                content = "\n".join(lines)
+                embed.add_field(
+                    name=f"{icon} {title.upper()}", 
+                    value=f"```py\nILVL | NAME         | INFO\n{'-'*30}\n{content}```", 
+                    inline=False
+                )
 
-        if dps:
-            embed.add_field(name="⚔️ SCHADENSAUSSTEILER", value="\n".join(dps), inline=False)
-            
-        if not_ready:
-            embed.add_field(name="❌ NOCH IN ARBEIT", value="\n".join(not_ready), inline=False)
-
-        embed.set_footer(text="Letztes Update")
+        embed.set_footer(text=f"Letztes Update: {datetime.now().strftime('%H:%M:%S')} Uhr • Anforderung: 265+ & VZ")
         await message.edit(embed=embed, view=DashboardView())
 
     @app_commands.command(name="setup_dashboard", description="Erstellt das neue, smarte Dashboard")
