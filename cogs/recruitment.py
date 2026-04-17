@@ -111,7 +111,9 @@ class SuperQuickModal(discord.ui.Modal, title='Neuer Gilden-Eintrag'):
             
             if member:
                 b_role = interaction.guild.get_role(BEWERBER_ROLLE_ID)
+                g_role = interaction.guild.get_role(GAST_ROLLE_ID)
                 if b_role: await member.add_roles(b_role)
+                if g_role: await member.remove_roles(g_role)
                 
                 with open(DB_FILE, "r") as f: db_data = json.load(f)
                 db_data[str(member.id)] = {"chars": [{"name": name, "realm": srv}]}
