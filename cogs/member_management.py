@@ -164,6 +164,33 @@ class MemberManagement(commands.Cog):
         self.save_db(db)
         await interaction.response.send_message(message)
 
+    @app_commands.command(name="list_chars", description="Zeigt alle Charaktere eines Mitglieds an")
+    @app_commands.describe(user="Das Mitglied, dessen Charaktere du sehen möchtest")
+    async def list_chars(self, interaction: discord.Interaction, user: discord.Member = None):
+        db = self.load_db()
+        target_user = user if user else interaction.user
+        uid = str(target_user.id)
+
+        if uid not in db or not db[uid].get("chars"):
+            return await interaction.response.send_message(f"❌ Keine Charaktere für {target_user.display_name} gefunden.", ephemeral=True)
+
+        chars = db[uid]["chars"]
+        
+        embed = discord.Embed(
+            title=f"Charaktere von {target_user.display_name}",
+            color=discord.Color.green()
+        )
+        
+        char_liste = ""
+        for i, char in enumerate(chars):
+            prefix = "👑 **(Main)**" if i == 0 else "🔹 (Twink)"
+            char_liste += f"{prefix} {char['name']} - {char['realm']}\n"
+        
+        embed.description = char_liste
+        embed.set_thumbnail(url=target_user.display_avatar.url)
+        
+        await interaction.response.send_message(embed=embed)
+
     @app_commands.command(name="memberliste", description="Zeigt die Gildenmitglieder und ihren Hauptcharakter")
     async def memberliste(self, interaction: discord.Interaction):
         db = self.load_db()
