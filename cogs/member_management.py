@@ -22,31 +22,26 @@ class MemberManagement(commands.Cog):
         with open(DB_FILE, "w") as f:
             json.dump(data, f, indent=4)
 
-async def update_nickname(self, interaction: discord.Interaction, member: discord.Member, new_char_name: str):
+    async def update_nickname(self, interaction: discord.Interaction, member: discord.Member, new_char_name: str):
         """Hilfsfunktion: Ändert nur den Charakter-Teil im Format 'Char | Name'."""
         current_nick = member.display_name
         
-        # Wir prüfen, ob ein Trenner "|" vorhanden ist
         if "|" in current_nick:
-            # Wir splitten beim ersten "|" und nehmen alles danach (den realen Namen)
             parts = current_nick.split("|", 1)
             real_name = parts[1].strip()
             new_nick = f"{new_char_name} | {real_name}"
         else:
-            # Falls kein "|" existiert (Fallback), setzen wir nur den Char-Namen
-            # oder behalten den alten Namen als Anhang
+            # Falls kein Trenner da ist, hängen wir den alten Namen als Real-Name an
             new_nick = f"{new_char_name} | {current_nick}"
 
-        # Discord Limit von 32 Zeichen beachten
         if len(new_nick) > 32:
             new_nick = new_nick[:32]
 
         try:
             await member.edit(nick=new_nick)
         except discord.Forbidden:
-            print(f"Rechte fehlen: Konnte Nickname für {member.display_name} nicht ändern.")
+            print(f"Konnte Nickname für {member.display_name} nicht ändern (Fehlende Rechte).")
 
-    # --- 1. SET MAIN BEFEHL (mit User-Option & Nickname Update) ---
     @app_commands.command(name="set_main", description="Setzt den Hauptcharakter und passt den Discord-Namen an")
     @app_commands.describe(char_name="Name des Charakters", user="Optional: Das Mitglied, dessen Main geändert werden soll")
     async def set_main(self, interaction: discord.Interaction, char_name: str, user: discord.Member = None):
@@ -54,7 +49,6 @@ async def update_nickname(self, interaction: discord.Interaction, member: discor
         target_user = user if user else interaction.user
         uid = str(target_user.id)
 
-        # Offizier-Check, wenn man jemand anderen bearbeitet
         if user and user != interaction.user:
             if not any(r.id == OFFIZIER_ROLLE_ID for r in interaction.user.roles):
                 return await interaction.response.send_message("❌ Nur Offiziere dürfen den Main anderer ändern.", ephemeral=True)
@@ -68,18 +62,14 @@ async def update_nickname(self, interaction: discord.Interaction, member: discor
         if not main_char:
             return await interaction.response.send_message(f"❌ Charakter `{char_name}` nicht gefunden.", ephemeral=True)
 
-        # Datenbank-Update: Main an Position 0 schieben
         chars.remove(main_char)
         chars.insert(0, main_char)
         db[uid]["chars"] = chars
         self.save_db(db)
         
-        # Nickname-Update
         await self.update_nickname(interaction, target_user, main_char['name'])
-        
         await interaction.response.send_message(f"👑 **{main_char['name']}** ist nun der Main von {target_user.mention}. Discord-Name wurde angepasst!")
 
-    # --- 2. RENAME CHAR BEFEHL ---
     @app_commands.command(name="rename_char", description="Ändert den Namen eines Charakters")
     async def rename_char(self, interaction: discord.Interaction, alter_name: str, neuer_name: str):
         db = self.load_db()
@@ -94,7 +84,7 @@ async def update_nickname(self, interaction: discord.Interaction, member: discor
             if char['name'].lower() == alter_name.lower():
                 char['name'] = neuer_name.capitalize()
                 updated = True
-                if i == 0: is_main = True # Falls es der Main war, Nickname später ändern
+                if i == 0: is_main = True
                 break
         
         if updated:
@@ -105,7 +95,6 @@ async def update_nickname(self, interaction: discord.Interaction, member: discor
         else:
             await interaction.response.send_message(f"❌ Nicht gefunden.", ephemeral=True)
 
-    # --- ADD CHAR (mit Nickname-Check) ---
     @app_commands.command(name="add_char")
     async def add_char(self, interaction: discord.Interaction, user: discord.Member, rio_link: str):
         if not any(r.id == OFFIZIER_ROLLE_ID for r in interaction.user.roles):
@@ -125,14 +114,12 @@ async def update_nickname(self, interaction: discord.Interaction, member: discor
             
             db[uid]["chars"].append({"name": name, "realm": srv})
             
-            # Falls es der erste Char ist, automatisch Nickname setzen
             if len(db[uid]["chars"]) == 1:
                 await self.update_nickname(interaction, user, name)
             
             self.save_db(db)
             await interaction.response.send_message(f"✅ {name}-{srv} für {user.display_name} hinzugefügt!")
 
-    # --- MEMBERLISTE (Nur Main-Charakter Fokus) ---
     @app_commands.command(name="memberliste", description="Zeigt die Gildenmitglieder und ihren Hauptcharakter")
     async def memberliste(self, interaction: discord.Interaction):
         db = self.load_db()
@@ -145,7 +132,7 @@ async def update_nickname(self, interaction: discord.Interaction, member: discor
             
             chars = data.get('chars', [])
             if chars:
-                main_char = chars[0]['name'] # Der erste in der Liste ist der Main
+                main_char = chars[0]['name']
                 twinks_count = len(chars) - 1
                 twink_info = f" (+{twinks_count} Twinks)" if twinks_count > 0 else ""
                 desc += f"👤 {name} — 👑 **{main_char}**{twink_info}\n"
