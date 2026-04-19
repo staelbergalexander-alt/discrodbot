@@ -95,30 +95,67 @@ class MemberManagement(commands.Cog):
         else:
             await interaction.response.send_message(f"❌ Nicht gefunden.", ephemeral=True)
 
-    @app_commands.command(name="add_char")
+   @app_commands.command(name="add_char", description="Fügt einen Charakter via Raider.IO Link hinzu und erkennt die Klasse")
     async def add_char(self, interaction: discord.Interaction, user: discord.Member, rio_link: str):
         if not any(r.id == OFFIZIER_ROLLE_ID for r in interaction.user.roles):
-            return await interaction.response.send_message("Nur für Offiziere!", ephemeral=True)
+            return await interaction.response.send_message("❌ Nur für Offiziere!", ephemeral=True)
             
+        # Regex um Realm und Name aus dem Link zu extrahieren
         match = re.search(r"characters/eu/([^/]+)/([^/?#\s]+)", rio_link.lower())
-        if match:
-            srv, name = match.group(1).capitalize(), match.group(2).capitalize()
-            db = self.load_db()
-            uid = str(user.id)
+        if not match:
+            return await interaction.response.send_message("❌ Ungültiger Raider.IO Link.", ephemeral=True)
             
-            if uid not in db:
-                db[uid] = {"chars": []}
+        srv, name = match.group(1), match.group(2)
+        
+        # Sofortige Antwort, da die API-Abfrage einen Moment dauern kann
+        await interaction.response.defer()
+
+        # Raider.IO API Abfrage
+        import aiohttp
+        api_url = f"https://raider.io/api/v1/characters/profile?region=eu&realm={srv}&name={name}&fields=gear"
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(api_url) as response:
+                if response.status != 200:
+                    return await interaction.followup.send(f"❌ Charakter `{name.capitalize()}` konnte bei Raider.IO nicht gefunden werden.")
+                
+                data = await response.json()
+                char_class = data.get('class', 'Unbekannt')
+                thumbnail = data.get('thumbnail_url')
+
+        # Datenbank-Logik
+        db = self.load_db()
+        uid = str(user.id)
+        srv_cap, name_cap = srv.capitalize(), name.capitalize()
+        
+        if uid not in db:
+            db[uid] = {"chars": []}
+        
+        if any(c['name'] == name_cap and c['realm'] == srv_cap for c in db[uid]['chars']):
+            return await interaction.followup.send("⚠️ Dieser Charakter ist bereits registriert.")
+        
+        # Speichern inklusive Klasse
+        db[uid]["chars"].append({
+            "name": name_cap, 
+            "realm": srv_cap, 
+            "class": char_class
+        })
+        
+        # Falls es der erste Char ist, Nickname setzen
+        if len(db[uid]["chars"]) == 1:
+            await self.update_nickname(interaction, user, name_cap)
+        
+        self.save_db(db)
+
+        # Bestätigungs-Embed
+        embed = discord.Embed(title="✅ Charakter registriert", color=discord.Color.green())
+        embed.add_field(name="Charakter", value=f"{name_cap}-{srv_cap}", inline=True)
+        embed.add_field(name="Klasse", value=char_class, inline=True)
+        embed.add_field(name="Mitglied", value=user.mention, inline=False)
+        if thumbnail:
+            embed.set_thumbnail(url=thumbnail)
             
-            if any(c['name'] == name and c['realm'] == srv for c in db[uid]['chars']):
-                return await interaction.response.send_message("Char bereits registriert.", ephemeral=True)
-            
-            db[uid]["chars"].append({"name": name, "realm": srv})
-            
-            if len(db[uid]["chars"]) == 1:
-                await self.update_nickname(interaction, user, name)
-            
-            self.save_db(db)
-            await interaction.response.send_message(f"✅ {name}-{srv} für {user.display_name} hinzugefügt!")
+        await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="delete_char", description="Löscht einen Charakter aus der Datenbank")
     @app_commands.describe(char_name="Name des zu löschenden Charakters", user="Optional: Das Mitglied (nur für Offiziere)")
@@ -189,6 +226,42 @@ class MemberManagement(commands.Cog):
         embed.description = char_liste
         embed.set_thumbnail(url=target_user.display_avatar.url)
         
+        await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(name="klassenliste", description="Zeigt eine Übersicht aller Charaktere sortiert nach Klassen")
+    async def klassenliste(self, interaction: discord.Interaction):
+        db = self.load_db()
+        if not db:
+            return await interaction.response.send_message("Die Datenbank ist leer.", ephemeral=True)
+
+        # Klassen-Dictionary vorbereiten
+        klassen_mapping = {}
+
+        for uid, data in db.items():
+            member = interaction.guild.get_member(int(uid))
+            member_name = member.display_name if member else f"User {uid}"
+            
+            for char in data.get('chars', []):
+                # Wir nehmen die Klasse aus der DB, falls nicht vorhanden "Unbekannt"
+                klasse = char.get('class', 'Unbekannt').capitalize()
+                
+                if klasse not in klassen_mapping:
+                    klassen_mapping[klasse] = []
+                
+                # Markierung ob Main oder Twink für die Liste
+                is_main = (data['chars'].index(char) == 0)
+                prefix = "👑" if is_main else "🔹"
+                
+                klassen_mapping[klasse].append(f"{prefix} {char['name']} ({member_name})")
+
+        # Embed erstellen
+        embed = discord.Embed(title="🛡️ Gilden-Klassenübersicht", color=discord.Color.gold())
+        
+        # Sortierte Ausgabe nach Klassennamen
+        for klasse in sorted(klassen_mapping.keys()):
+            chars_str = "\n".join(klassen_mapping[klasse])
+            embed.add_field(name=f"**{klasse}**", value=chars_str, inline=True)
+
         await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="memberliste", description="Zeigt die Gildenmitglieder und ihren Hauptcharakter")
