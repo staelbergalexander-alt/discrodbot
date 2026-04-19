@@ -145,6 +145,42 @@ class MemberManagement(commands.Cog):
             embed.add_field(name=kl, value="\n".join(mapping[kl]), inline=True)
         await interaction.response.send_message(embed=embed)
 
+    @app_commands.command(name="sync_classes", description="Offiziere: Aktualisiert fehlende Klassen in der Datenbank via Raider.IO")
+    async def sync_classes(self, interaction: discord.Interaction):
+        # Nur Offiziere dürfen diesen schweren Befehl ausführen
+        if not any(r.id == OFFIZIER_ROLLE_ID for r in interaction.user.roles):
+            return await interaction.response.send_message("❌ Nur für Offiziere!", ephemeral=True)
+            
+        await interaction.response.defer(ephemeral=True)
+        
+        db = self.load_db()
+        updated_count = 0
+        
+        async with aiohttp.ClientSession() as session:
+            for uid, data in db.items():
+                for char in data.get('chars', []):
+                    # Nur abfragen, wenn Klasse fehlt oder "Unbekannt" ist
+                    if char.get('class') in [None, 'Unbekannt']:
+                        name = char['name']
+                        realm = char['realm']
+                        
+                        api_url = f"https://raider.io/api/v1/characters/profile?region=eu&realm={realm}&name={name}"
+                        
+                        try:
+                            async with session.get(api_url) as response:
+                                if response.status == 200:
+                                    res_data = await response.json()
+                                    char['class'] = res_data.get('class', 'Unbekannt')
+                                    updated_count += 1
+                        except Exception as e:
+                            print(f"Fehler beim Sync von {name}: {e}")
+        
+        if updated_count > 0:
+            self.save_db(db)
+            await interaction.followup.send(f"✅ Sync abgeschlossen! {updated_count} Charaktere wurden aktualisiert.")
+        else:
+            await interaction.followup.send("ℹ️ Alle Charaktere sind bereits auf dem neuesten Stand.")
+
     @app_commands.command(name="delete_char", description="Löscht einen Charakter")
     async def delete_char(self, interaction: discord.Interaction, char_name: str, user: discord.Member = None):
         db = self.load_db()
