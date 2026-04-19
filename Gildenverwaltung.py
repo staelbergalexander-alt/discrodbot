@@ -2,11 +2,12 @@ import discord
 from discord.ext import commands
 import os
 import json
+import asyncio  # NEU: Für den parallelen Start
+from web_dashboard import run_web  # NEU: Importiert den Webserver
 
 # Wichtig: Alle Views importieren, damit sie registriert werden können
 from cogs.utilities import RaidPollView
 from cogs.recruitment import ThreadActionView
-# HIER NEU: DashboardView importieren (Pfad anpassen, falls es in dashboard.py liegt)
 from cogs.dashboard import DashboardView 
 
 # IDs aus Railway laden
@@ -44,10 +45,10 @@ class GildenBot(commands.Bot):
         # 1. Datenbank prüfen
         self.check_db_format()
 
-        # 2. Permanente Views registrieren (Buttons überleben Neustart)
+        # 2. Permanente Views registrieren
         self.add_view(RaidPollView())
         self.add_view(ThreadActionView())
-        self.add_view(DashboardView()) # HIER NEU hinzugefügt
+        self.add_view(DashboardView())
         print("Permanente Views (Umfrage, Recruitment & Dashboard) registriert.")
 
         # 3. Cogs automatisch laden
@@ -73,4 +74,17 @@ async def on_ready():
     print(f'Eingeloggt als {bot.user} (ID: {bot.user.id})')
     print('------')
 
-bot.run(TOKEN)
+# --- NEU: ASYNCHRONE START-LOGIK ---
+async def start_everything():
+    # Wir erstellen zwei Tasks: Einer für die Webseite, einer für den Bot
+    # gather wartet, bis beide gestartet sind
+    try:
+        await asyncio.gather(
+            run_web(),     # Startet den Quart-Webserver aus web_dashboard.py
+            bot.start(TOKEN) # Startet den Discord Bot
+        )
+    except Exception as e:
+        print(f"Kritischer Fehler beim Starten: {e}")
+
+if __name__ == "__main__":
+    asyncio.run(start_everything())
