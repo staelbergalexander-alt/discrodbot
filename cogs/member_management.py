@@ -125,24 +125,64 @@ class MemberManagement(commands.Cog):
         embed.description = liste
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="klassenliste", description="Übersicht aller Klassen")
+   @app_commands.command(name="klassenliste", description="Zeigt eine übersichtliche Liste aller Klassen und Spieler")
     async def klassenliste(self, interaction: discord.Interaction):
         db = self.load_db()
-        if not db: return await interaction.response.send_message("DB leer.", ephemeral=True)
+        if not db:
+            return await interaction.response.send_message("❌ Die Datenbank ist noch leer.", ephemeral=True)
+
+        # Mapping von Klassennamen zu passenden Emojis (WoW-Style)
+        class_emojis = {
+            "Warrior": "🛡️", "Paladin": "✨", "Hunter": "🏹", "Rogue": "🗡️",
+            "Priest": "☁️", "Death Knight": "💀", "Shaman": "⚡", "Mage": "🔥",
+            "Warlock": "😈", "Monk": "🍺", "Druid": "🐾", "Demon Hunter": "🕶️",
+            "Evoker": "🐲", "Unbekannt": "❓"
+        }
 
         mapping = {}
+        total_chars = 0
+
+        # Daten sammeln
         for uid, data in db.items():
             member = interaction.guild.get_member(int(uid))
-            m_name = member.display_name if member else f"User {uid}"
-            for char in data.get('chars', []):
-                kl = char.get('class', 'Unbekannt')
-                if kl not in mapping: mapping[kl] = []
-                is_m = (data['chars'].index(char) == 0)
-                mapping[kl].append(f"{'👑' if is_m else '🔹'} {char['name']} ({m_name})")
+            # Wir nehmen den Namen nach dem "|" falls vorhanden, sonst den Nick
+            member_display = member.display_name if member else f"User {uid}"
+            real_name = member_display.split("|")[-1].strip() if "|" in member_display else member_display
 
-        embed = discord.Embed(title="🛡️ Klassenübersicht", color=discord.Color.gold())
+            for char in data.get('chars', []):
+                kl = char.get('class', 'Unbekannt').title() # "death knight" -> "Death Knight"
+                if kl not in mapping:
+                    mapping[kl] = []
+                
+                is_main = (data['chars'].index(char) == 0)
+                status = "👑" if is_main else "🔹"
+                mapping[kl].append(f"{status} **{char['name']}** ({real_name})")
+                total_chars += 1
+
+        embed = discord.Embed(
+            title="🛡️ Gilden-Besetzung",
+            description=f"Gesamt registrierte Charaktere: **{total_chars}**\n\n*👑 = Main | 🔹 = Twink*",
+            color=discord.Color.dark_purple()
+        )
+
+        # Sortiere Klassen alphabetisch
         for kl in sorted(mapping.keys()):
-            embed.add_field(name=kl, value="\n".join(mapping[kl]), inline=True)
+            emoji = class_emojis.get(kl, "❓")
+            count = len(mapping[kl])
+            
+            # Die Liste der Charaktere als formatierter Block
+            char_list = "\n".join(mapping[kl])
+            
+            # Ein Field pro Klasse hinzufügen
+            embed.add_field(
+                name=f"{emoji} {kl} ({count})",
+                value=char_list,
+                inline=True
+            )
+
+        # Falls die Felder nicht durch 3 teilbar sind, sieht es manchmal unsauber aus. 
+        # Inline=True sorgt für eine kompakte Kachel-Optik.
+        
         await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="sync_classes", description="Offiziere: Aktualisiert fehlende Klassen in der Datenbank via Raider.IO")
