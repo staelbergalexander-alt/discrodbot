@@ -125,13 +125,12 @@ class MemberManagement(commands.Cog):
         embed.description = liste
         await interaction.response.send_message(embed=embed)
 
-   @app_commands.command(name="klassenliste", description="Zeigt eine übersichtliche Liste aller Klassen und Spieler")
+    @app_commands.command(name="klassenliste", description="Übersicht aller Klassen")
     async def klassenliste(self, interaction: discord.Interaction):
         db = self.load_db()
         if not db:
-            return await interaction.response.send_message("❌ Die Datenbank ist noch leer.", ephemeral=True)
+            return await interaction.response.send_message("DB leer.", ephemeral=True)
 
-        # Mapping von Klassennamen zu passenden Emojis (WoW-Style)
         class_emojis = {
             "Warrior": "🛡️", "Paladin": "✨", "Hunter": "🏹", "Rogue": "🗡️",
             "Priest": "☁️", "Death Knight": "💀", "Shaman": "⚡", "Mage": "🔥",
@@ -140,86 +139,23 @@ class MemberManagement(commands.Cog):
         }
 
         mapping = {}
-        total_chars = 0
-
-        # Daten sammeln
         for uid, data in db.items():
             member = interaction.guild.get_member(int(uid))
-            # Wir nehmen den Namen nach dem "|" falls vorhanden, sonst den Nick
             member_display = member.display_name if member else f"User {uid}"
             real_name = member_display.split("|")[-1].strip() if "|" in member_display else member_display
-
+            
             for char in data.get('chars', []):
-                kl = char.get('class', 'Unbekannt').title() # "death knight" -> "Death Knight"
-                if kl not in mapping:
-                    mapping[kl] = []
-                
-                is_main = (data['chars'].index(char) == 0)
-                status = "👑" if is_main else "🔹"
-                mapping[kl].append(f"{status} **{char['name']}** ({real_name})")
-                total_chars += 1
+                kl = char.get('class', 'Unbekannt').title()
+                if kl not in mapping: mapping[kl] = []
+                is_m = (data['chars'].index(char) == 0)
+                mapping[kl].append(f"{'👑' if is_m else '🔹'} {char['name']} ({real_name})")
 
-        embed = discord.Embed(
-            title="🛡️ Gilden-Besetzung",
-            description=f"Gesamt registrierte Charaktere: **{total_chars}**\n\n*👑 = Main | 🔹 = Twink*",
-            color=discord.Color.dark_purple()
-        )
-
-        # Sortiere Klassen alphabetisch
+        embed = discord.Embed(title="🛡️ Gilden-Besetzung", color=discord.Color.gold())
         for kl in sorted(mapping.keys()):
             emoji = class_emojis.get(kl, "❓")
-            count = len(mapping[kl])
-            
-            # Die Liste der Charaktere als formatierter Block
-            char_list = "\n".join(mapping[kl])
-            
-            # Ein Field pro Klasse hinzufügen
-            embed.add_field(
-                name=f"{emoji} {kl} ({count})",
-                value=char_list,
-                inline=True
-            )
-
-        # Falls die Felder nicht durch 3 teilbar sind, sieht es manchmal unsauber aus. 
-        # Inline=True sorgt für eine kompakte Kachel-Optik.
+            embed.add_field(name=f"{emoji} {kl} ({len(mapping[kl])})", value="\n".join(mapping[kl]), inline=True)
         
         await interaction.response.send_message(embed=embed)
-
-    @app_commands.command(name="sync_classes", description="Offiziere: Aktualisiert fehlende Klassen in der Datenbank via Raider.IO")
-    async def sync_classes(self, interaction: discord.Interaction):
-        # Nur Offiziere dürfen diesen schweren Befehl ausführen
-        if not any(r.id == OFFIZIER_ROLLE_ID for r in interaction.user.roles):
-            return await interaction.response.send_message("❌ Nur für Offiziere!", ephemeral=True)
-            
-        await interaction.response.defer(ephemeral=True)
-        
-        db = self.load_db()
-        updated_count = 0
-        
-        async with aiohttp.ClientSession() as session:
-            for uid, data in db.items():
-                for char in data.get('chars', []):
-                    # Nur abfragen, wenn Klasse fehlt oder "Unbekannt" ist
-                    if char.get('class') in [None, 'Unbekannt']:
-                        name = char['name']
-                        realm = char['realm']
-                        
-                        api_url = f"https://raider.io/api/v1/characters/profile?region=eu&realm={realm}&name={name}"
-                        
-                        try:
-                            async with session.get(api_url) as response:
-                                if response.status == 200:
-                                    res_data = await response.json()
-                                    char['class'] = res_data.get('class', 'Unbekannt')
-                                    updated_count += 1
-                        except Exception as e:
-                            print(f"Fehler beim Sync von {name}: {e}")
-        
-        if updated_count > 0:
-            self.save_db(db)
-            await interaction.followup.send(f"✅ Sync abgeschlossen! {updated_count} Charaktere wurden aktualisiert.")
-        else:
-            await interaction.followup.send("ℹ️ Alle Charaktere sind bereits auf dem neuesten Stand.")
 
     @app_commands.command(name="delete_char", description="Löscht einen Charakter")
     async def delete_char(self, interaction: discord.Interaction, char_name: str, user: discord.Member = None):
@@ -249,6 +185,29 @@ class MemberManagement(commands.Cog):
 
         self.save_db(db)
         await interaction.response.send_message(f"🗑️ `{char_name}` gelöscht.")
+
+    @app_commands.command(name="sync_classes", description="Aktualisiert fehlende Klassen")
+    async def sync_classes(self, interaction: discord.Interaction):
+        if not any(r.id == OFFIZIER_ROLLE_ID for r in interaction.user.roles):
+            return await interaction.response.send_message("❌ Nur für Offiziere!", ephemeral=True)
+            
+        await interaction.response.defer(ephemeral=True)
+        db = self.load_db()
+        updated_count = 0
+        
+        async with aiohttp.ClientSession() as session:
+            for uid, data in db.items():
+                for char in data.get('chars', []):
+                    if char.get('class') in [None, 'Unbekannt']:
+                        api_url = f"https://raider.io/api/v1/characters/profile?region=eu&realm={char['realm']}&name={char['name']}"
+                        async with session.get(api_url) as response:
+                            if response.status == 200:
+                                res_data = await response.json()
+                                char['class'] = res_data.get('class', 'Unbekannt')
+                                updated_count += 1
+        
+        self.save_db(db)
+        await interaction.followup.send(f"✅ Sync fertig! {updated_count} Chars aktualisiert.")
 
 async def setup(bot):
     await bot.add_cog(MemberManagement(bot))
