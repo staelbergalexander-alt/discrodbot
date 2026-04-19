@@ -120,6 +120,50 @@ class MemberManagement(commands.Cog):
             self.save_db(db)
             await interaction.response.send_message(f"✅ {name}-{srv} für {user.display_name} hinzugefügt!")
 
+    @app_commands.command(name="delete_char", description="Löscht einen Charakter aus der Datenbank")
+    @app_commands.describe(char_name="Name des zu löschenden Charakters", user="Optional: Das Mitglied (nur für Offiziere)")
+    async def delete_char(self, interaction: discord.Interaction, char_name: str, user: discord.Member = None):
+        db = self.load_db()
+        target_user = user if user else interaction.user
+        uid = str(target_user.id)
+
+        # Berechtigungs-Check
+        if user and user != interaction.user:
+            if not any(r.id == OFFIZIER_ROLLE_ID for r in interaction.user.roles):
+                return await interaction.response.send_message("❌ Nur Offiziere dürfen Charaktere anderer löschen.", ephemeral=True)
+
+        if uid not in db or not db[uid].get("chars"):
+            return await interaction.response.send_message(f"❌ Keine Charaktere für {target_user.display_name} gefunden.", ephemeral=True)
+
+        chars = db[uid]["chars"]
+        char_to_remove = next((c for c in chars if c['name'].lower() == char_name.lower()), None)
+
+        if not char_to_remove:
+            return await interaction.response.send_message(f"❌ Charakter `{char_name}` wurde in der Liste nicht gefunden.", ephemeral=True)
+
+        # Prüfen, ob der gelöschte Char der Main war (Index 0)
+        was_main = (chars.index(char_to_remove) == 0)
+
+        # Entfernen
+        chars.remove(char_to_remove)
+        
+        message = f"🗑️ Charakter `{char_to_remove['name']}` wurde für {target_user.mention} gelöscht."
+
+        if chars:
+            db[uid]["chars"] = chars
+            # Wenn der Main gelöscht wurde, wird der neue erste Char zum Main -> Nickname Update
+            if was_main:
+                new_main = chars[0]['name']
+                await self.update_nickname(interaction, target_user, new_main)
+                message += f"\n👑 Neuer Main ist nun `{new_main}`. Discord-Name wurde angepasst."
+        else:
+            # Falls gar kein Char mehr übrig ist
+            del db[uid]
+            message += "\n⚠️ Keine weiteren Charaktere übrig. Eintrag wurde komplett entfernt."
+
+        self.save_db(db)
+        await interaction.response.send_message(message)
+
     @app_commands.command(name="memberliste", description="Zeigt die Gildenmitglieder und ihren Hauptcharakter")
     async def memberliste(self, interaction: discord.Interaction):
         db = self.load_db()
