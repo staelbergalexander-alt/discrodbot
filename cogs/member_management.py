@@ -22,13 +22,29 @@ class MemberManagement(commands.Cog):
         with open(DB_FILE, "w") as f:
             json.dump(data, f, indent=4)
 
-    async def update_nickname(self, interaction: discord.Interaction, member: discord.Member, new_name: str):
-        """Hilfsfunktion zum Ändern des Nicknamens."""
+async def update_nickname(self, interaction: discord.Interaction, member: discord.Member, new_char_name: str):
+        """Hilfsfunktion: Ändert nur den Charakter-Teil im Format 'Char | Name'."""
+        current_nick = member.display_name
+        
+        # Wir prüfen, ob ein Trenner "|" vorhanden ist
+        if "|" in current_nick:
+            # Wir splitten beim ersten "|" und nehmen alles danach (den realen Namen)
+            parts = current_nick.split("|", 1)
+            real_name = parts[1].strip()
+            new_nick = f"{new_char_name} | {real_name}"
+        else:
+            # Falls kein "|" existiert (Fallback), setzen wir nur den Char-Namen
+            # oder behalten den alten Namen als Anhang
+            new_nick = f"{new_char_name} | {current_nick}"
+
+        # Discord Limit von 32 Zeichen beachten
+        if len(new_nick) > 32:
+            new_nick = new_nick[:32]
+
         try:
-            await member.edit(nick=new_name)
+            await member.edit(nick=new_nick)
         except discord.Forbidden:
-            # Falls der Bot keine Rechte hat (z.B. bei Serverbesitzern)
-            print(f"Konnte Nickname für {member.display_name} nicht ändern (Fehlende Rechte).")
+            print(f"Rechte fehlen: Konnte Nickname für {member.display_name} nicht ändern.")
 
     # --- 1. SET MAIN BEFEHL (mit User-Option & Nickname Update) ---
     @app_commands.command(name="set_main", description="Setzt den Hauptcharakter und passt den Discord-Namen an")
