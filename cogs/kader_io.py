@@ -88,20 +88,36 @@ class KaderIO(commands.Cog):
             description=f"Kader-Auslastung für die Gilde **{self.guild_name}**",
             color=0x2b2d31
         )
+        
+        # Hier definieren wir die Ziele
         config = {
-            "Tank":   {"goal": 2, "emoji": "🛡️", "label": "MID"},
-            "Heiler": {"goal": 5, "emoji": "🌿", "label": "HIGH"},
-            "Melee":  {"goal": 7, "emoji": "⚔️", "label": "MAX"},
-            "Ranged": {"goal": 7, "emoji": "🏹", "label": "LOW"}
+            "Tank":   {"goal": 2, "emoji": "🛡️"},
+            "Heiler": {"goal": 5, "emoji": "🌿"},
+            "Melee":  {"goal": 7, "emoji": "⚔️"},
+            "Ranged": {"goal": 7, "emoji": "🏹"}
         }
+        
         content = ""
         for role, data in config.items():
             count = stats[role]
             goal = data["goal"]
+            
+            # Dynamisches Label basierend auf der Füllung
+            if count >= goal:
+                label = "CLOSED" # Kader voll
+            elif count >= (goal * 0.8):
+                label = "LOW"    # Fast voll, niedrige Prio
+            elif count >= (goal * 0.5):
+                label = "MID"    # Halb voll
+            else:
+                label = "HIGH"   # Wenig Spieler, hohe Prio
+            
+            # Balken-Berechnung
             filled = min(count, goal)
             empty = max(0, goal - count)
             bar = "█" * filled + "░" * empty
-            content += f"{data['emoji']} **{role.upper():<7}** → {bar} `{count}/{goal}` `{data['label']}`\n"
+            
+            content += f"{data['emoji']} **{role.upper():<7}** → {bar} `{count}/{goal}` `{label}`\n"
         
         embed.add_field(name="Kader Belegung", value=content, inline=False)
         embed.set_footer(text=f"Letztes Update: {datetime.now().strftime('%d.%m.%Y - %H:%M')} Uhr")
