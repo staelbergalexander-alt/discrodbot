@@ -172,13 +172,30 @@ class SuperQuickModal(discord.ui.Modal, title='Neuer Gilden-Eintrag'):
                 # Forum Thread erstellen
                 forum = interaction.guild.get_channel(FORUM_CHANNEL_ID)
                 if forum:
-                    embed = discord.Embed(title=f"🛡️ Neuer Eintrag: {name}", color=discord.Color.blue(), timestamp=datetime.now())
-                    embed.add_field(name="Klasse", value=char_class, inline=True)
-                    embed.add_field(name="Spieler", value=self.real_name.value, inline=True)
-                    embed.add_field(name="Links", value=f"[Raider.io]({self.rio_link.value}) | [WarcraftLogs]({wcl_link})", inline=False)
-
-                    # Thread-Name auf 100 Zeichen begrenzen
+                    # Titel-Format: [Klasse] Charaktername | Vorname
                     thread_title = f"[{char_class}] {name} | {self.real_name.value}"[:100]
+                    
+                    # Embed-Design anpassen
+                    embed = discord.Embed(
+                        title=f"🛡️ Neuer Eintrag: {name}", 
+                        color=discord.Color.blue(), 
+                        timestamp=datetime.now()
+                    )
+                    
+                    # Felder hinzufügen (inline=False sorgt dafür, dass sie untereinander stehen)
+                    embed.add_field(name="Klasse/Spec", value=char_class, inline=False)
+                    embed.add_field(name="Spieler", value=self.real_name.value, inline=False)
+                    embed.add_field(name="Server", value=srv, inline=False)
+                    embed.add_field(name="Eintrittsdatum", value=datetime.now().strftime("%d.%m.%Y"), inline=False)
+                    
+                    # Links (Raider.io & WCL)
+                    embed.add_field(
+                        name="Links", 
+                        value=f"[Raider.io]({self.rio_link.value}) | [WarcraftLogs]({wcl_link})", 
+                        inline=False
+                    )
+
+                    # Thread erstellen
                     thread_data = await forum.create_thread(name=thread_title, embed=embed)
                     
                     # Buttons in den neuen Thread senden
