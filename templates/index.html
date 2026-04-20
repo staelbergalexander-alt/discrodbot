@@ -2,85 +2,72 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script src="https://cdn.tailwindcss.com"></script>
-    <title>Gilden Dashboard</title>
+    <title>Gilden-Dashboard</title>
+    <style>
+        .class-border-Druid { border-left: 5px solid #FF7C0A; }
+        .class-border-Mage { border-left: 5px solid #3FC7EB; }
+        .class-border-Paladin { border-left: 5px solid #F48CBA; }
+        /* Weitere Klassenfarben hier ergänzen */
+    </style>
 </head>
-<body class="bg-slate-900 text-white font-sans min-h-screen">
-
-    <nav class="bg-slate-800 p-4 border-b border-indigo-500 shadow-2xl">
-        <div class="container mx-auto flex justify-between items-center">
-            <h1 class="text-2xl font-bold text-indigo-400 flex items-center gap-2">
-                <span>🛡️</span> Gilden Verwaltung
-            </h1>
-            <div class="flex items-center gap-4">
-                <span class="flex items-center gap-2">
-                    <span class="w-3 h-3 bg-green-500 rounded-full animate-pulse"></span>
-                    System Live
-                </span>
-            </div>
-        </div>
+<body class="bg-slate-900 text-slate-100 min-h-screen font-sans">
+    
+    <nav class="p-6 bg-slate-800 border-b border-indigo-500 shadow-xl mb-10">
+        <h1 class="text-3xl font-bold text-center text-indigo-400 font-mono tracking-tighter">🛡️ DISCORD BOT DASHBOARD</h1>
     </nav>
 
-    <div class="container mx-auto mt-10 p-6">
-        
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-            <div class="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-lg">
-                <p class="text-slate-400 text-xs font-bold uppercase tracking-widest">Mitglieder</p>
-                <h2 class="text-4xl font-extrabold text-white mt-1">{{ stats.total }}</h2>
+    <div class="container mx-auto px-4">
+        <div class="flex gap-6 mb-10 justify-center">
+            <div class="bg-slate-800 p-4 rounded-lg border border-slate-700 w-48 text-center">
+                <p class="text-xs text-slate-400 uppercase">Spieler</p>
+                <p class="text-2xl font-bold">{{ stats.total_members }}</p>
             </div>
-            <div class="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-lg border-l-4 border-l-indigo-500">
-                <p class="text-slate-400 text-xs font-bold uppercase tracking-widest">Aktiv</p>
-                <h2 class="text-4xl font-extrabold text-indigo-400 mt-1">{{ stats.active }}</h2>
-            </div>
-            <div class="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-lg">
-                <p class="text-slate-400 text-xs font-bold uppercase tracking-widest">Dashboard Status</p>
-                <h2 class="text-4xl font-extrabold text-green-400 mt-1">{{ stats.status }}</h2>
+            <div class="bg-slate-800 p-4 rounded-lg border border-slate-700 w-48 text-center">
+                <p class="text-xs text-slate-400 uppercase">Charaktere</p>
+                <p class="text-2xl font-bold">{{ stats.total_chars }}</p>
             </div>
         </div>
 
-        <div class="bg-slate-800 rounded-2xl overflow-hidden shadow-2xl border border-slate-700">
-            <div class="p-5 border-b border-slate-700 bg-slate-800/50">
-                <h3 class="text-xl font-semibold text-slate-200">Mitgliederliste (aus JSON)</h3>
-            </div>
-            <div class="overflow-x-auto">
-                <table class="w-full text-left">
-                    <thead class="bg-slate-900/50 text-slate-400 text-sm uppercase">
-                        <tr>
-                            <th class="p-5">ID</th>
-                            <th class="p-5">Name</th>
-                            <th class="p-5">Status</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-700">
-                        {% for m_id, m_data in members.items() %}
-                        <tr class="hover:bg-slate-700/30 transition-colors">
-                            <td class="p-5 font-mono text-indigo-300 text-sm">{{ m_id }}</td>
-                            <td class="p-5">
-                                <div class="font-bold text-slate-100 text-lg">{{ m_data.name }}</div>
-                            </td>
-                            <td class="p-5">
-                                <span class="px-3 py-1 rounded-full text-xs font-bold bg-green-500/10 text-green-400 border border-green-500/20">
-                                    {{ m_data.get('status', 'Unbekannt') }}
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {% for uid, user_data in members.items() %}
+            <div class="bg-slate-800 rounded-xl p-5 border border-slate-700 shadow-2xl">
+                <h2 class="text-indigo-400 font-bold mb-4 border-b border-slate-700 pb-2">
+                    Spieler-ID: {{ uid[-5:] }}... </h2>
+                
+                <div class="space-y-4">
+                    {% for char in user_data.chars %}
+                    <div class="bg-slate-900/50 p-3 rounded border-l-4 shadow-inner 
+                                {% if loop.first %} border-indigo-500 bg-indigo-900/10 {% else %} border-slate-600 {% endif %}">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <p class="text-lg font-bold">{{ char.name }}</p>
+                                <p class="text-xs text-slate-400">{{ char.class }} - {{ char.realm }}</p>
+                            </div>
+                            <div class="text-right">
+                                <span class="bg-slate-800 text-indigo-300 px-2 py-1 rounded text-xs font-mono border border-indigo-500/30">
+                                    iLvl {{ char.ilvl }}
                                 </span>
-                            </td>
-                        </tr>
-                        {% else %}
-                        <tr>
-                            <td colspan="3" class="p-10 text-center text-slate-500 italic">
-                                Keine Mitglieder in der Datenbank gefunden.
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+                            </div>
+                        </div>
+                        <div class="mt-3 flex justify-between items-center">
+                            <a href="{{ char.rio_url }}" target="_blank" class="text-[10px] text-orange-400 hover:underline">Raider.io ↗</a>
+                            {% if loop.first %}
+                            <span class="text-[10px] bg-indigo-500 text-white px-2 rounded-full uppercase font-bold tracking-tighter">Main</span>
+                            {% else %}
+                            <span class="text-[10px] text-slate-500 uppercase">Twink</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
             </div>
+            {% endfor %}
         </div>
     </div>
 
-    <footer class="mt-20 p-10 text-center text-slate-600 text-sm border-t border-slate-800">
-        &copy; 2024 Gilden-Bot Dashboard | Erstellt für staelbergalexander-alt
+    <footer class="text-center py-20 text-slate-600 text-xs uppercase tracking-widest">
+        Gilden-System v2.0 | Connected to mitglieder_db.json
     </footer>
-
 </body>
 </html>

@@ -1,39 +1,41 @@
-from flask import Flask, render_template
-import json
 import os
+import json
+from quart import Quart, render_template
 
-app = Flask(__name__)
+app = Quart(__name__)
 
-# Pfad zu deiner Datenbank aus dem 'data' Ordner
-DB_PATH = os.path.join("data", "mitglieder_db.json")
-
-def load_member_data():
-    """Lädt die Mitgliederdaten aus der JSON-Datei."""
-    if not os.path.exists(DB_PATH):
-        return {}
-    
-    try:
-        with open(DB_PATH, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            # Falls deine JSON-Struktur ein Dictionary mit 'members' ist:
-            return data.get("members", data) 
-    except Exception as e:
-        print(f"Fehler beim Laden der JSON: {e}")
-        return {}
+# Pfad-Check für Railway vs. Lokal
+DB_FILE = "/app/data/mitglieder_db.json" if os.path.exists("/app/data/") else "data/mitglieder_db.json"
 
 @app.route('/')
-def index():
-    members = load_member_data()
-    
-    # Statistiken berechnen
-    stats = {
-        "total": len(members),
-        "active": sum(1 for m in members.values() if m.get("status") == "Aktiv"),
-        "status": "Online"  # Da das Script läuft, ist das Dashboard online
-    }
-    
-    return render_template('index.html', members=members, stats=stats)
+async def index():
+    members_data = {}
+    if os.path.exists(DB_FILE):
+        try:
+            with open(DB_FILE, "r", encoding="utf-8") as f:
+                members_data = json.load(f)
+        except Exception as e:
+            print(f"Fehler: {e}")
 
-if __name__ == '__main__':
-    # Starte den Flask-Server auf Port 5000
-    app.run(debug=True, port=5000)
+    # Wir berechnen Statistiken
+    total_chars = 0
+    for uid in members_data:
+        total_chars += len(members_data[uid].get('chars', []))
+
+    stats = {
+        "total_members": len(members_data),
+        "total_chars": total_chars,
+        "status": "Online"
+    }
+
+    # Wir übergeben die Daten an das HTML
+    return await render_template('index.html', members=members_data, stats=stats)
+
+def run_web():
+    import asyncio
+    from hypercorn.asyncio import serve
+    from hypercorn.config import Config
+    
+    config = Config()
+    config.bind = [f"0.0.0.0:{os.environ.get('PORT', 5000)}"]
+    asyncio.run(serve(app, config))
