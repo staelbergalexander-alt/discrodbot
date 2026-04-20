@@ -140,7 +140,7 @@ class KaderIO(commands.Cog):
     async def auto_update(self):
         await self.perform_update()
 
-    @app_commands.command(name="kader_setup", description="Erstellt den initialen Kader-Post")
+@app_commands.command(name="kader_setup", description="Erstellt den initialen Kader-Post")
     async def kader_setup(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         stats, err = await self.get_stats_from_raiderio()
@@ -152,7 +152,7 @@ class KaderIO(commands.Cog):
             f"✅ Post erstellt! Speichere diese ID in Railway unter `RECRUITMENT_MSG_ID`: `{msg.id}`"
         )
 
-    @app_commands.command(name="kader_update", description="Aktualisiert den Kader-Post sofort")
+@app_commands.command(name="kader_update", description="Aktualisiert den Kader-Post sofort")
     async def kader_update(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         await self.perform_update()
