@@ -42,11 +42,10 @@ class KaderIO(commands.Cog):
         if spec in melees: return "Melee"
         if spec in rangeds: return "Ranged"
         
-        # Fallback basierend auf Klasse, falls Spec unbekannt
         return "Ranged" if char_class in ["Mage", "Warlock", "Hunter", "Priest"] else "Melee"
 
     async def get_stats_from_raiderio(self):
-        """Holt die Gildenliste von Raider.io und verarbeitet die Rollen."""
+        """Holt die Gildenliste von Raider.io."""
         stats = {"Tank": 0, "Heiler": 0, "Melee": 0, "Ranged": 0}
         
         safe_name = urllib.parse.quote(self.guild_name)
@@ -114,7 +113,7 @@ class KaderIO(commands.Cog):
         return embed
 
     async def perform_update(self):
-        """Führt das Update des bestehenden Posts aus."""
+        """Führt das Update des Posts aus."""
         if not self.recruitment_msg_id or not self.recruitment_channel_id:
             return
             
@@ -131,18 +130,16 @@ class KaderIO(commands.Cog):
     async def auto_update(self):
         await self.perform_update()
 
-    # --- HIER WURDE DIE EINRÜCKUNG KORRIGIERT ---
-
     @app_commands.command(name="kader_setup", description="Erstellt den initialen Kader-Post")
     async def kader_setup(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         stats, err = await self.get_stats_from_raiderio()
         if err:
-            return await interaction.followup.send(f"❌ Fehler beim Abrufen der Daten: {err}")
+            return await interaction.followup.send(f"❌ Fehler: {err}")
             
         msg = await interaction.channel.send(embed=self.create_embed(stats))
         await interaction.followup.send(
-            f"✅ Post erstellt! Speichere diese ID in Railway unter `RECRUITMENT_MSG_ID`: `{msg.id}`"
+            f"✅ Post erstellt! ID für Railway `RECRUITMENT_MSG_ID`: `{msg.id}`"
         )
 
     @app_commands.command(name="kader_update", description="Aktualisiert den Kader-Post sofort")
@@ -150,9 +147,6 @@ class KaderIO(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         await self.perform_update()
         await interaction.followup.send("✅ Kader-Anzeige wurde manuell aktualisiert!")
-
-
-# --- DIESE FUNKTION STEHT AUSSERHALB DER KLASSE ---
 
 async def setup(bot):
     await bot.add_cog(KaderIO(bot))
