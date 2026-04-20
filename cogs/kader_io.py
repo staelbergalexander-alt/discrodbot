@@ -55,7 +55,8 @@ class KaderIO(commands.Cog):
                         
                         for m in members:
                             char = m.get('character', {})
-                            
+                        # DIESE ZEILE HINZUFÜGEN:
+                            print(f"DEBUG: Name: {char.get('name')} | Rang: {m.get('rank')} | Level: {char.get('level')}")
                             # Filter: Nur Ränge bis max_rank berücksichtigen
                             # Das Level-Check haben wir entfernt, da Raider.io hier 'None' liefert
                             if m.get('rank', 10) > self.max_rank: 
