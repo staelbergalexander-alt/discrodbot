@@ -137,4 +137,26 @@ class KaderIO(commands.Cog):
             print(f"❌ KaderIO Update Fehler: {e}")
 
     @tasks.loop(hours=1) # Intervall auf 1 Stunde verkürzt für bessere Aktualität
-    async def
+    async def auto_update(self):
+        await self.perform_update()
+
+    @app_commands.command(name="kader_setup", description="Erstellt den initialen Kader-Post")
+    async def kader_setup(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        stats, err = await self.get_stats_from_raiderio()
+        if err:
+            return await interaction.followup.send(f"❌ Fehler beim Abrufen der Daten: {err}")
+            
+        msg = await interaction.channel.send(embed=self.create_embed(stats))
+        await interaction.followup.send(
+            f"✅ Post erstellt! Speichere diese ID in Railway unter `RECRUITMENT_MSG_ID`: `{msg.id}`"
+        )
+
+    @app_commands.command(name="kader_update", description="Aktualisiert den Kader-Post sofort")
+    async def kader_update(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        await self.perform_update()
+        await interaction.followup.send("✅ Kader-Anzeige wurde manuell aktualisiert!")
+
+async def setup(bot):
+    await bot.add_cog(KaderIO(bot))
