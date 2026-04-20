@@ -20,13 +20,7 @@ from config import (
 # --- MODAL FÜR ABLEHNUNGS-BEGRÜNDUNG ---
 
 class DeclineReasonModal(discord.ui.Modal, title='Bewerbung ablehnen'):
-    reason = discord.ui.TextInput(
-        label='Begründung', 
-        style=discord.TextStyle.paragraph, 
-        placeholder='Z.B. Gear reicht noch nicht ganz aus...',
-        required=True,
-        max_length=500
-    )
+    reason = discord.ui.TextInput(label='Begründung', style=discord.TextStyle.paragraph, required=True)
 
     def __init__(self, member_id):
         super().__init__()
@@ -35,7 +29,6 @@ class DeclineReasonModal(discord.ui.Modal, title='Bewerbung ablehnen'):
     async def on_submit(self, interaction: discord.Interaction):
         member = interaction.guild.get_member(self.member_id)
         
-        # Rollen anpassen
         if member:
             g_role = interaction.guild.get_role(GAST_ROLLE_ID)
             b_role = interaction.guild.get_role(BEWERBER_ROLLE_ID)
@@ -48,13 +41,14 @@ class DeclineReasonModal(discord.ui.Modal, title='Bewerbung ablehnen'):
             color=discord.Color.red(),
             timestamp=datetime.now()
         )
+        # Die Nachricht senden, damit der Grund im Archiv steht
         await interaction.response.send_message(embed=embed)
         
-        # Thread automatisch archivieren
+        # BEI ABLEHNUNG: SCHLIESSEN & ARCHIVIEREN
         if isinstance(interaction.channel, discord.Thread):
-            await asyncio.sleep(10)
-            await interaction.channel.edit(archived=True, locked=True)
-
+            await asyncio.sleep(5)
+            # locked=True verhindert, dass Leute weiter im Thread schreiben
+            await interaction.channel.edit(name=f"❌ ABGELEHNT - {interaction.channel.name}", archived=True, locked=True)
 # --- VIEWS FÜR DIE BUTTONS ---
 
 class ThreadActionView(discord.ui.View):
