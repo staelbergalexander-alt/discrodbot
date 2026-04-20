@@ -44,16 +44,10 @@ class KaderIO(commands.Cog):
         
         return "Ranged" if char_class in ["Mage", "Warlock", "Hunter", "Priest"] else "Melee"
 
-    async def get_stats_from_raiderio(self):
-        for m in members:
-            char = m.get('character', {})
-            # Diese Zeile in den Logs beobachten:
-            print(f"DEBUG: Prüfe {char.get('name')} | Rang: {m.get('rank')} | Level: {char.get('level')}")
-        
-            if m.get('rank', 10) > self.max_rank: continue
-            # ... restlicher code
-        """Holt die Gildenliste von Raider.io."""
+   async def get_stats_from_raiderio(self):
+        """Holt die Gildenliste von Raider.io und verarbeitet die Rollen."""
         stats = {"Tank": 0, "Heiler": 0, "Melee": 0, "Ranged": 0}
+        members = []  # <--- WICHTIG: Hier vorab definieren!
         
         safe_name = urllib.parse.quote(self.guild_name)
         safe_realm = urllib.parse.quote(self.realm.lower().replace(" ", "-"))
@@ -80,16 +74,18 @@ class KaderIO(commands.Cog):
                                 stats[role] += 1
                             elif rio_role:
                                 if rio_role == "TANK": stats["Tank"] += 1
-                                elif rio_role == "HEALER": stats["Heiler"] += 1
+                                elif rio_role == "Heiler": stats["Heiler"] += 1
                                 else:
                                     if char_class in ["Mage", "Warlock", "Hunter"]:
                                         stats["Ranged"] += 1
                                     else:
                                         stats["Melee"] += 1
                         return stats, None
-                    return stats, f"API Fehler {resp.status}"
+                    else:
+                        # Falls die API einen Fehlercode wie 404 zurückgibt
+                        return stats, f"Raider.io API Fehler: Status {resp.status}"
         except Exception as e:
-            return stats, str(e)
+            return stats, f"Verbindungsfehler: {str(e)}"
 
     def create_embed(self, stats):
         """Erstellt das Embed mit den Fortschrittsbalken."""
