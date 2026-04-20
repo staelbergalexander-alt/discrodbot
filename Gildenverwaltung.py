@@ -80,7 +80,7 @@ async def start_everything():
     # gather wartet, bis beide gestartet sind
     try:
         await asyncio.gather(
-            run_web(),     # Startet den Quart-Webserver aus web_dashboard.py
+            run_web(bot),     # Startet den Quart-Webserver aus web_dashboard.py
             bot.start(TOKEN) # Startet den Discord Bot
         )
     except Exception as e:
