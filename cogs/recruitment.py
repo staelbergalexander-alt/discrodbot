@@ -89,6 +89,13 @@ class ThreadActionView(discord.ui.View):
         if not target_id:
             return await interaction.response.send_message("❌ Fehler: ID nicht gefunden.", ephemeral=True)
             
+        if member:
+            g_role = interaction.guild.get_role(GAST_ROLLE_ID)
+            b_role = interaction.guild.get_role(BEWERBER_ROLLE_ID)
+            if m_role: await member.add_roles(g_role)
+            if b_role: await member.remove_roles(b_role)
+            await interaction.response.send_message(f"❌ {member.mention} wurde abgelehnt! Post wird archiviert...")
+            
         await interaction.response.send_modal(DeclineReasonModal(target_id))
 
 class SuperQuickModal(discord.ui.Modal, title='Neuer Gilden-Eintrag'):
