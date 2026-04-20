@@ -5,14 +5,14 @@ from quart import Quart, render_template_string, redirect, url_for
 
 app = Quart(__name__)
 
-# Pfade & IDs (aus Railway oder lokal)
+# Pfade & IDs aus Umgebungsvariablen (Railway) oder lokal
 DB_FILE = "/app/data/mitglieder_db.json" if os.path.exists("/app/data/") else "data/mitglieder_db.json"
 SERVER_ID = int(os.getenv('SERVER_ID') or 0)
 OFFIZIER_ROLLE_ID = int(os.getenv('OFFIZIER_ROLLE_ID') or 0)
 MITGLIED_ROLLE_ID = int(os.getenv('MITGLIED_ROLLE_ID') or 0)
 BEWERBER_ROLLE_ID = int(os.getenv('BEWERBER_ROLLE_ID') or 0)
 
-# Globaler Bot-Speicher
+# Globaler Bot-Speicher für den Zugriff auf Server-Daten
 bot_instance = None
 
 @app.route('/')
@@ -29,10 +29,12 @@ async def index():
 
     enhanced_members = {}
     total_chars = 0
+    
+    # Gilde vom Bot abrufen
     guild = bot_instance.get_guild(SERVER_ID) if bot_instance else None
 
     for uid, user_data in members_data.items():
-        # Standard-Rolle falls nicht gefunden
+        # Standard-Rolle (Gast)
         role_info = {"name": "Gast", "color": "slate-500"}
         
         if guild:
@@ -63,56 +65,78 @@ async def index():
         <title>Gilden Dashboard</title>
     </head>
     <body class="bg-[#0f172a] text-slate-200 min-h-screen font-sans">
+        
         <header class="p-8 bg-[#1e293b] border-b border-indigo-500/50 shadow-2xl mb-10 text-center">
             <h1 class="text-4xl font-black text-indigo-400 tracking-tighter italic">🛡️ GILDEN DASHBOARD</h1>
             <div class="flex justify-center gap-4 mt-4">
-                <span class="bg-indigo-500/20 text-indigo-300 px-4 py-1 rounded-full text-sm border border-indigo-500/30">👤 Spieler: {{ stats.total_members }}</span>
-                <span class="bg-emerald-500/20 text-emerald-300 px-4 py-1 rounded-full text-sm border border-emerald-500/30">⚔️ Charaktere: {{ stats.total_chars }}</span>
+                <span class="bg-indigo-500/20 text-indigo-300 px-4 py-1 rounded-full text-sm border border-indigo-500/30">
+                    👤 Spieler: {{ stats.total_members }}
+                </span>
+                <span class="bg-emerald-500/20 text-emerald-300 px-4 py-1 rounded-full text-sm border border-emerald-500/30">
+                    ⚔️ Charaktere: {{ stats.total_chars }}
+                </span>
             </div>
         </header>
 
         <div class="container mx-auto px-4 pb-20">
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                
                 {% for uid, data in members.items() %}
                 <div class="bg-[#1e293b] rounded-2xl p-6 border border-slate-700 hover:border-indigo-500/50 transition-all shadow-xl relative overflow-hidden">
                     
                     <div class="absolute top-0 right-0 px-3 py-1 bg-{{ data.role.color }}/20 border-b border-l border-{{ data.role.color }}/30 rounded-bl-lg">
-                        <span class="text-[10px] font-bold text-{{ data.role.color }} uppercase tracking-tighter">{{ data.role.name }}</span>
+                        <span class="text-[10px] font-bold text-{{ data.role.color }} uppercase tracking-tighter">
+                            {{ data.role.name }}
+                        </span>
                     </div>
 
                     <div class="mb-4">
-                        <h2 class="text-slate-400 text-[10px] font-mono opacity-50">UID: ...{{ uid[-6:] }}</h2>
+                        <h2 class="text-slate-400 text-[10px] font-mono opacity-50">UID: ...{{ uid[-6:] if uid|length > 6 else uid }}</h2>
                     </div>
 
                     <div class="space-y-4">
-                        {% for char in data.chars %}
-                        <div class="bg-[#0f172a]/50 p-4 rounded-xl border-l-4 border-indigo-500 shadow-inner">
-                            <div class="flex justify-between items-start">
-                                <div>
-                                    <h3 class="text-xl font-bold text-white leading-tight">{{ char.name }}</h3>
-                                    <p class="text-sm text-indigo-400 font-medium">{{ char.class }}</p>
-                                    <p class="text-[10px] text-slate-500 uppercase">{{ char.realm }}</p>
+                        {% if data.chars %}
+                            {% for char in data.chars %}
+                            <div class="bg-[#0f172a]/50 p-4 rounded-xl border-l-4 border-indigo-500 shadow-inner">
+                                <div class="flex justify-between items-start">
+                                    <div>
+                                        <h3 class="text-xl font-bold text-white leading-tight">{{ char.name }}</h3>
+                                        <p class="text-sm text-indigo-400 font-medium">{{ char.class }}</p>
+                                        <p class="text-[10px] text-slate-500 uppercase">{{ char.realm }}</p>
+                                    </div>
+                                    <div class="bg-indigo-500/10 border border-indigo-500/50 text-indigo-300 px-3 py-1 rounded-lg text-center">
+                                        <span class="text-[8px] block text-slate-500 uppercase font-bold">iLvl</span>
+                                        <span class="font-mono font-bold">{{ char.ilvl }}</span>
+                                    </div>
                                 </div>
-                                <div class="bg-indigo-500/10 border border-indigo-500/50 text-indigo-300 px-3 py-1 rounded-lg text-center">
-                                    <span class="text-[8px] block text-slate-500 uppercase font-bold">iLvl</span>
-                                    <span class="font-mono font-bold">{{ char.ilvl }}</span>
+                                
+                                <div class="mt-4 pt-3 border-t border-slate-700/50 flex justify-between items-center">
+                                    <a href="{{ char.rio_url }}" target="_blank" class="text-xs text-orange-400 hover:text-orange-300 transition-colors">
+                                        🔗 Raider.io
+                                    </a>
+                                    
+                                    <div class="flex gap-2 items-center">
+                                        {% if loop.first %}
+                                            <span class="text-[9px] bg-indigo-600 text-white px-2 py-0.5 rounded-full font-bold">MAIN</span>
+                                        {% endif %}
+                                        
+                                        <a href="/delete/{{ uid }}/{{ loop.index0 }}" 
+                                           onclick="return confirm('Charakter {{ char.name }} wirklich löschen?')" 
+                                           class="text-slate-600 hover:text-red-500 transition-colors p-1"
+                                           title="Löschen">
+                                            🗑️
+                                        </a>
+                                    </div>
                                 </div>
                             </div>
-                            
-                            <div class="mt-4 pt-3 border-t border-slate-700/50 flex justify-between items-center">
-                                <a href="{{ char.rio_url }}" target="_blank" class="text-xs text-orange-400 hover:text-orange-300">🔗 Raider.io</a>
-                                <div class="flex gap-2 items-center">
-                                    {% if loop.first %}
-                                        <span class="text-[9px] bg-indigo-600 text-white px-2 py-0.5 rounded-full font-bold">MAIN</span>
-                                    {% endif %}
-                                    <a href="/delete/{{ uid }}/{{ loop.index0 }}" onclick="return confirm('Löschen?')" class="text-slate-600 hover:text-red-500 transition-colors">🗑️</a>
-                                </div>
-                            </div>
-                        </div>
-                        {% endfor %}
+                            {% endfor %}
+                        {% else %}
+                            <p class="text-slate-500 italic text-sm text-center">Keine Charaktere gefunden.</p>
+                        {% endif %}
                     </div>
                 </div>
                 {% endfor %}
+
             </div>
         </div>
     </body>
@@ -126,19 +150,33 @@ async def delete_char(uid, char_idx):
         try:
             with open(DB_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
+            
             if uid in data and "chars" in data[uid]:
+                # Charakter entfernen
                 data[uid]["chars"].pop(char_idx)
-                if not data[uid]["chars"]: del data[uid]
+                
+                # Wenn der User keine Chars mehr hat, User aus DB entfernen
+                if not data[uid]["chars"]:
+                    del data[uid]
+                
+                # Datei speichern
                 with open(DB_FILE, "w", encoding="utf-8") as f:
                     json.dump(data, f, indent=4, ensure_ascii=False)
-        except Exception as e: print(f"Löschfehler: {e}")
+                    
+        except Exception as e:
+            print(f"Fehler beim Löschen: {e}")
+
     return redirect(url_for('index'))
 
 async def run_web(bot=None):
     global bot_instance
-    bot_instance = bot
+    bot_instance = bot  # Macht den Bot für die Rollen-Abfrage verfügbar
     from hypercorn.asyncio import serve
     from hypercorn.config import Config
+    
     config = Config()
     config.bind = [f"0.0.0.0:{os.environ.get('PORT', 5000)}"]
     await serve(app, config)
+
+if __name__ == "__main__":
+    app.run(debug=True, port=5000)
