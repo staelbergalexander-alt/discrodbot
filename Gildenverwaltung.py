@@ -22,9 +22,9 @@ class GildenBot(commands.Bot):
         )
 
     async def setup_hook(self):
-        """Lädt Cogs und startet den Webserver."""
-        # Liste deiner Cogs (Dateinamen ohne .py)
-        # Wenn die Dateien im Ordner "cogs" liegen, ist der Punkt-Pfad richtig
+        """Lädt Cogs, registriert persistente Views und startet den Webserver."""
+        
+        # 1. Liste deiner Cogs
         extensions = [
             'cogs.utilities', 
             'cogs.recruitment', 
@@ -36,16 +36,24 @@ class GildenBot(commands.Bot):
         print("--- Lade Cogs ---")
         for ext in extensions:
             try:
-                # Wir laden die Extension direkt. 
-                # Falls sie nicht existiert, fängt der except-Block den Fehler ab.
                 await self.load_extension(ext)
                 print(f"✅ Cog geladen: {ext}")
             except Exception as e:
                 print(f"❌ Fehler bei {ext}: {e}")
         
-        # Webserver im Hintergrund starten
-        if bot_instance := self:
-            self.loop.create_task(run_web(bot_instance))
+        # 2. PERSISTENTE VIEWS REGISTRIEREN
+        # Hier sagen wir dem Bot, dass er dauerhaft auf die Umfrage-Buttons achten soll.
+        # Wir importieren die View lokal hier drinnen, um Kreis-Import-Fehler zu vermeiden.
+        try:
+            from cogs.utilities import RaidPollView
+            self.add_view(RaidPollView())
+            print("✅ Persistente Raid-Umfrage registriert")
+        except Exception as e:
+            print(f"⚠️ Konnte RaidPollView nicht registrieren: {e}")
+
+        # 3. Webserver im Hintergrund starten
+        print("--- Starte Webserver ---")
+        self.loop.create_task(run_web(self))
 
     async def on_ready(self):
         print(f'✅ Bot online als {self.user.name}')
@@ -53,11 +61,12 @@ class GildenBot(commands.Bot):
 # --- Bot Instanz erstellen ---
 bot = GildenBot()
 
-# --- Sync Command (jetzt nach der Erstellung von 'bot') ---
+# --- Sync Command ---
 @bot.command()
 @commands.is_owner()
 async def sync(ctx):
     try:
+        # Synchronisiert Slash-Commands (/) global
         fmt = await bot.tree.sync()
         await ctx.send(f"✅ {len(fmt)} Slash-Commands synchronisiert!")
     except Exception as e:
