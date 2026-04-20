@@ -11,7 +11,7 @@ app = Quart(__name__)
 # Pfade & IDs
 DB_FILE = "/app/data/mitglieder_db.json" if os.path.exists("/app/data/") else "data/mitglieder_db.json"
 SERVER_ID = int(os.getenv('SERVER_ID') or 0)
-FORUM_CHANNEL_ID = int(os.getenv('FORUM_CHANNEL_ID') or 0) # NEU: Deine Forum-ID
+FORUM_CHANNEL_ID = int(os.getenv('FORUM_CHANNEL_ID') or 0)
 OFFIZIER_ROLLE_ID = int(os.getenv('OFFIZIER_ROLLE_ID') or 0)
 MITGLIED_ROLLE_ID = int(os.getenv('MITGLIED_ROLLE_ID') or 0)
 BEWERBER_ROLLE_ID = int(os.getenv('BEWERBER_ROLLE_ID') or 0)
@@ -44,17 +44,21 @@ async def index():
 
     for uid, user_data in members_data.items():
         role_info = {"name": "Gast", "color": "slate", "priority": 4}
-        display_name = f"User {uid[-4:]}"
+        display_name = f"User {uid}"
         joined_date = None
+        
+        # Versuche echte Discord-Daten zu laden
         if guild:
-            member = guild.get_member(int(uid))
-            if member:
-                display_name = member.display_name
-                joined_date = member.joined_at.strftime("%d.%m.%Y") if member.joined_at else None
-                role_ids = [r.id for r in member.roles]
-                if OFFIZIER_ROLLE_ID in role_ids: role_info = {"name": "Offizier", "color": "violet", "priority": 1}
-                elif MITGLIED_ROLLE_ID in role_ids: role_info = {"name": "Mitglied", "color": "emerald", "priority": 2}
-                elif BEWERBER_ROLLE_ID in role_ids: role_info = {"name": "Bewerber", "color": "amber", "priority": 3}
+            try:
+                member = guild.get_member(int(uid))
+                if member:
+                    display_name = member.display_name
+                    joined_date = member.joined_at.strftime("%d.%m.%Y") if member.joined_at else None
+                    role_ids = [r.id for r in member.roles]
+                    if OFFIZIER_ROLLE_ID in role_ids: role_info = {"name": "Offizier", "color": "violet", "priority": 1}
+                    elif MITGLIED_ROLLE_ID in role_ids: role_info = {"name": "Mitglied", "color": "emerald", "priority": 2}
+                    elif BEWERBER_ROLLE_ID in role_ids: role_info = {"name": "Bewerber", "color": "amber", "priority": 3}
+            except: pass
 
         enhanced_list.append({"uid": uid, "name": display_name, "chars": user_data.get("chars", []), "role": role_info, "joined_at": joined_date})
 
@@ -72,16 +76,19 @@ async def index():
     <body class="text-slate-200 p-4 md:p-10">
         <div class="container mx-auto max-w-6xl">
             
-            <div class="flex flex-col md:flex-row justify-between items-center mb-12 gap-6 bg-slate-900/50 p-8 rounded-3xl border border-slate-800">
-                <div>
+            <div class="bg-slate-900/50 p-8 rounded-3xl border border-slate-800 mb-12 shadow-2xl">
+                <div class="mb-6 text-center md:text-left">
                     <h1 class="text-4xl font-black italic uppercase text-white">Gilden<span class="text-indigo-500">Admin</span></h1>
-                    <p class="text-slate-500 text-sm">Bewerber hinzufügen & Discord Forum erstellen</p>
+                    <p class="text-slate-500 text-sm">Bewerber hinzufügen mit Raider.io & Discord ID</p>
                 </div>
                 
-                <form action="/add_applicant" method="post" class="flex flex-wrap gap-3">
-                    <input name="name" placeholder="Char Name" class="bg-slate-800 border border-slate-700 px-4 py-2 rounded-xl focus:outline-none focus:border-indigo-500 transition-all text-white" required>
-                    <input name="realm" placeholder="Server (z.B. Blackhand)" class="bg-slate-800 border border-slate-700 px-4 py-2 rounded-xl focus:outline-none focus:border-indigo-500 transition-all text-white" required>
-                    <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-6 py-2 rounded-xl transition-all shadow-lg shadow-indigo-500/20">+ Hinzufügen</button>
+                <form action="/add_applicant" method="post" class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <input name="name" placeholder="Charakter Name" class="bg-slate-800 border border-slate-700 px-4 py-3 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-white" required>
+                    <input name="realm" placeholder="Server (z.B. Blackhand)" class="bg-slate-800 border border-slate-700 px-4 py-3 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-white" required>
+                    <input name="discord_id" placeholder="Discord ID (Zahlen)" class="bg-slate-800 border border-slate-700 px-4 py-3 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-white" required>
+                    <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-6 py-3 rounded-xl transition-all shadow-lg shadow-indigo-500/20">
+                        + Hinzufügen & Posten
+                    </button>
                 </form>
             </div>
 
@@ -89,17 +96,23 @@ async def index():
                 {% for user in members_list %}
                 <div class="bg-slate-900/40 rounded-3xl p-6 border border-slate-800 relative hover:border-{{user.role.color}}-500/30 transition-all">
                     <div class="absolute top-4 right-4 text-right">
-                        <span class="px-2 py-0.5 bg-{{user.role.color}}-500/10 text-{{user.role.color}}-400 text-[10px] font-bold rounded-full border border-{{user.role.color}}-500/20 uppercase tracking-widest">{{user.role.name}}</span>
+                        <span class="px-3 py-1 bg-{{user.role.color}}-500/10 text-{{user.role.color}}-400 text-[10px] font-bold rounded-full border border-{{user.role.color}}-500/20 uppercase tracking-widest">{{user.role.name}}</span>
+                        {% if user.joined_at %}<p class="text-[9px] text-slate-600 mt-1 font-mono italic">Seit {{user.joined_at}}</p>{% endif %}
                     </div>
-                    <h2 class="text-xl font-bold text-white mb-4">{{user.name}}</h2>
-                    <div class="space-y-3">
+                    <h2 class="text-2xl font-bold text-white mb-1">{{user.name}}</h2>
+                    <p class="text-[10px] font-mono text-slate-600 mb-6 uppercase tracking-widest">ID: {{user.uid}}</p>
+                    
+                    <div class="space-y-4">
                         {% for char in user.chars %}
-                        <div class="bg-slate-950/50 p-3 rounded-2xl border border-slate-800 flex justify-between items-center group">
+                        <div class="bg-slate-950/50 p-4 rounded-2xl border border-slate-800 flex justify-between items-center group">
                             <div>
-                                <p class="font-bold text-slate-200">{{char.name}}</p>
-                                <p class="text-[10px] text-indigo-400 font-bold uppercase">{{char.class}} ({{char.ilvl}})</p>
+                                <p class="font-bold text-slate-100 text-lg">{{char.name}}</p>
+                                <p class="text-xs text-indigo-400 font-bold uppercase tracking-tight">{{char.class}} — {{char.ilvl}} iLvl</p>
                             </div>
-                            <a href="/delete/{{user.uid}}/{{loop.index0}}" class="text-slate-800 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100">🗑️</a>
+                            <div class="flex items-center gap-3">
+                                <a href="https://raider.io/characters/eu/{{char.realm.replace(' ', '-').lower()}}/{{char.name.lower()}}" target="_blank" class="text-xs text-orange-500 font-bold">RIO</a>
+                                <a href="/delete/{{user.uid}}/{{loop.index0}}" class="text-slate-800 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100" onclick="return confirm('Löschen?')">🗑️</a>
+                            </div>
                         </div>
                         {% endfor %}
                     </div>
@@ -117,8 +130,9 @@ async def add_applicant():
     form = await request.form
     name = form.get('name')
     realm = form.get('realm')
+    discord_id = form.get('discord_id', '').strip()
     
-    if not name or not realm: return redirect('/')
+    if not name or not realm or not discord_id: return redirect('/')
 
     # 1. Daten von Raider.io holen
     ilvl, char_class, spec = await fetch_real_ilvl(name, realm)
@@ -127,31 +141,44 @@ async def add_applicant():
     if bot_instance and bot_instance.is_ready():
         forum_channel = bot_instance.get_channel(FORUM_CHANNEL_ID)
         if forum_channel:
-            content = f"**Neue Bewerbung eingegangen!**\n\n**Name:** {name}\n**Server:** {realm}\n**Klasse:** {char_class or 'Unbekannt'}\n**iLvl:** {ilvl or '?'}\n\n[Raider.io Profil](https://raider.io/characters/eu/{realm.replace(' ', '-').lower()}/{name.lower()})"
-            # Thread im Forum erstellen
+            rio_link = f"https://raider.io/characters/eu/{realm.replace(' ', '-').lower()}/{name.lower()}"
+            content = (
+                f"**Neue Bewerbung eingegangen!**\n\n"
+                f"👤 **Discord User:** <@{discord_id}>\n"
+                f"⚔️ **Charakter:** {name} - {realm}\n"
+                f"🛡️ **Klasse:** {char_class or 'Unbekannt'}\n"
+                f"📈 **iLvl:** {ilvl or '?'}\n\n"
+                f"[Raider.io Profil]({rio_link})"
+            )
             await forum_channel.create_thread(name=f"Bewerbung: {name} ({char_class or '?'})", content=content)
 
-    # 3. In Datenbank speichern (als neuer Gast/Bewerber ohne Discord-Verknüpfung)
-    # Hier nutzen wir den Namen als temporäre ID, falls kein Discord-User verknüpft ist
-    temp_id = f"manual_{name.lower()}"
-    
+    # 3. In Datenbank speichern
     with open(DB_FILE, "r+", encoding="utf-8") as f:
-        data = json.load(f)
+        try: data = json.load(f)
+        except: data = {}
+        
         new_char = {"name": name, "realm": realm, "class": char_class or "Unbekannt", "ilvl": ilvl or 0}
-        if temp_id not in data: data[temp_id] = {"chars": []}
-        data[temp_id]["chars"].append(new_char)
+        
+        if discord_id not in data:
+            data[discord_id] = {"chars": []}
+        
+        # Verhindere Duplikate
+        if not any(c['name'].lower() == name.lower() for c in data[discord_id]["chars"]):
+            data[discord_id]["chars"].append(new_char)
+            
         f.seek(0)
         json.dump(data, f, indent=4, ensure_ascii=False)
         f.truncate()
 
     return redirect('/')
 
-# (Restliche Funktionen wie delete_char und run_web bleiben gleich)
+# delete_char und run_web bleiben wie besprochen
 @app.route('/delete/<uid>/<int:char_idx>')
 async def delete_char(uid, char_idx):
     if os.path.exists(DB_FILE):
         with open(DB_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
+            try: data = json.load(f)
+            except: data = {}
         if uid in data:
             data[uid]["chars"].pop(char_idx)
             if not data[uid]["chars"]: del data[uid]
