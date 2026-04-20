@@ -38,7 +38,7 @@ class KaderIO(commands.Cog):
         if spec in rangeds: return "Ranged"
         return "Ranged" if char_class in ["Mage", "Warlock", "Hunter", "Priest"] else "Melee"
 
-   async def get_stats_from_raiderio(self):
+    async def get_stats_from_raiderio(self):
         stats = {"Tank": 0, "Heiler": 0, "Melee": 0, "Ranged": 0}
         members = []
         
@@ -55,10 +55,8 @@ class KaderIO(commands.Cog):
                         
                         for m in members:
                             char = m.get('character', {})
-                        # DIESE ZEILE HINZUFÜGEN:
-                            print(f"DEBUG: Name: {char.get('name')} | Rang: {m.get('rank')} | Level: {char.get('level')}")
+                            
                             # Filter: Nur Ränge bis max_rank berücksichtigen
-                            # Das Level-Check haben wir entfernt, da Raider.io hier 'None' liefert
                             if m.get('rank', 10) > self.max_rank: 
                                 continue
                             
@@ -78,8 +76,7 @@ class KaderIO(commands.Cog):
                                     else:
                                         stats["Melee"] += 1
                         
-                        # Debug: Zeigt im Log, was am Ende rauskommt
-                        print(f"DEBUG: Ergebnis -> {stats}")
+                        print(f"DEBUG: Kader berechnet -> {stats}")
                         return stats, None
                     return stats, f"API Fehler {resp.status}"
         except Exception as e:
