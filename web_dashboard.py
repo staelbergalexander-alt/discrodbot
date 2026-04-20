@@ -1,23 +1,24 @@
 import os
 import json
 import aiohttp
+import re
 from quart import Quart, render_template_string, redirect, url_for, request
 from quart_discord import DiscordOAuth2Session, requires_authorization
 
 app = Quart(__name__)
 
-# Fix für Railway (erlaubt OAuth2 über interne Verbindungen)
+# WICHTIG: Erlaubt OAuth2 über Railway's interne HTTP-Verbindung
 os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 
-# Railway Variablen
-app.secret_key = os.getenv("SECRET_KEY", "super-geheim")
+# Railway Umgebungsvariablen
+app.secret_key = os.getenv("SECRET_KEY", "ein-sehr-geheimer-schluessel")
 app.config["DISCORD_CLIENT_ID"] = os.getenv("DISCORD_CLIENT_ID")
 app.config["DISCORD_CLIENT_SECRET"] = os.getenv("DISCORD_CLIENT_SECRET")
 app.config["DISCORD_REDIRECT_URI"] = os.getenv("DISCORD_REDIRECT_URI")
 
 discord_auth = DiscordOAuth2Session(app)
 DB_FILE = "/app/data/mitglieder_db.json"
-MY_ID = "1159119755253383188" # Deine ID als Haupt-Admin
+MY_ID = "1159119755253383188" # Deine Discord-ID für Admin-Rechte
 
 CLASS_COLORS = {
     "Death Knight": "#C41E3A", "Demon Hunter": "#A330C9", "Druid": "#FF7C0A",
@@ -27,16 +28,26 @@ CLASS_COLORS = {
     "Warrior": "#C69B6D", "Unbekannt": "#A3A3A3"
 }
 
+# --- HELPER FUNKTIONEN ---
+
+def parse_rio_link(link):
+    """Extrahiert Realm und Name aus einem Raider.io Link"""
+    # Erkennt Links wie https://raider.io/characters/eu/realm/name
+    match = re.search(r"characters/eu/([^/]+)/([^/]+)", link)
+    if match:
+        return match.group(1).lower(), match.group(2).lower()
+    return None, None
+
 async def get_rio_data(name, realm):
-    """Fragt Charakterdaten bei Raider.io ab"""
+    """Holt iLvl und Klasse von der Raider.io API"""
     url = f"https://raider.io/api/v1/characters/profile?region=eu&realm={realm}&name={name}&fields=gear"
     async with aiohttp.ClientSession() as session:
         try:
             async with session.get(url) as resp:
                 if resp.status == 200:
                     return await resp.json()
-        except:
-            return None
+        except Exception as e:
+            print(f"Raider.io API Fehler: {e}")
     return None
 
 def load_db():
@@ -51,6 +62,8 @@ def save_db(data):
     with open(DB_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
+# --- ROUTES ---
+
 @app.route("/login")
 async def login():
     return await discord_auth.create_session()
@@ -60,7 +73,7 @@ async def callback():
     try:
         await discord_auth.callback()
     except Exception as e:
-        print(f"Callback Fehler: {e}")
+        print(f"Login Fehler: {e}")
     return redirect(url_for("index"))
 
 @app.route("/")
@@ -85,46 +98,52 @@ async def index():
 async def add_char():
     user = await discord_auth.fetch_user()
     if str(user.id) != MY_ID:
-        return "Keine Berechtigung", 403
+        return "Nur der Admin darf Charaktere hinzufügen.", 403
 
     form = await request.form
-    name = form.get("name").strip()
-    realm = form.get("realm").strip() or "Blackhand"
+    link = form.get("rio_link", "").strip()
     
-    # Raider.io API Abfrage
-    rio = await get_rio_data(name, realm)
+    realm, name = parse_rio_link(link)
+    if not name or not realm:
+        return "Ungültiger Link! Bitte kopiere einen EU-Raider.io Link.", 400
+
+    rio_info = await get_rio_data(name, realm)
     
     db = load_db()
+    # Wir gruppieren in der DB nach dem Discord-User, der gerade eingeloggt ist
     uid = str(user.id)
-    if uid not in db: db[uid] = {"chars": []}
+    if uid not in db:
+        db[uid] = {"discord_name": user.name, "chars": []}
     
-    # Daten zusammenbauen
     new_char = {
-        "name": rio["name"] if rio else name.capitalize(),
-        "class": rio["class"] if rio else "Unbekannt",
-        "realm": rio["realm"] if rio else realm.capitalize(),
-        "ilvl": rio["gear"]["item_level_equipped"] if rio else "??",
-        "rio_url": rio["profile_url"] if rio else "#"
+        "name": rio_info["name"] if rio_info else name.capitalize(),
+        "class": rio_info["class"] if rio_info else "Unbekannt",
+        "realm": rio_info["realm"] if rio_info else realm.capitalize(),
+        "ilvl": rio_info["gear"]["item_level_equipped"] if rio_info else "??",
+        "rio_url": link,
+        "added_by": user.name # Merkt sich den Discord-Namen
     }
     
     db[uid]["chars"].append(new_char)
     save_db(db)
     return redirect(url_for("index"))
 
-@app.route("/delete/<uid>/<int:char_index>")
+@app.route("/delete/<uid>/<int:index>")
 @requires_authorization
-async def delete_char(uid, char_index):
+async def delete_char(uid, index):
     user = await discord_auth.fetch_user()
     if str(user.id) != MY_ID:
         return "Keine Berechtigung", 403
 
     db = load_db()
-    if uid in db and 0 <= char_index < len(db[uid]["chars"]):
-        db[uid]["chars"].pop(char_index)
+    if uid in db and 0 <= index < len(db[uid]["chars"]):
+        db[uid]["chars"].pop(index)
         if not db[uid]["chars"]:
             del db[uid]
         save_db(db)
     return redirect(url_for("index"))
+
+# --- HTML DESIGN ---
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -132,85 +151,68 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gilden-Verwaltung</title>
+    <title>Gilden Tool</title>
     <style>
-        :root { --bg: #0f1014; --card: #1a1c23; --primary: #5865F2; --success: #23a559; --danger: #da373c; }
-        body { font-family: 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: #eee; margin: 0; padding: 20px; }
-        .container { max-width: 1000px; margin: auto; }
+        :root { --bg: #0b0c10; --card: #1f2833; --cyan: #66fcf1; --text: #eee; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; }
+        .container { max-width: 1200px; margin: auto; }
         
-        .header { display: flex; justify-content: space-between; align-items: center; background: var(--card); padding: 20px; border-radius: 12px; margin-bottom: 25px; border: 1px solid #2e3035; }
-        h1 { margin: 0; font-size: 1.5rem; display: flex; align-items: center; gap: 10px; }
+        header { display: flex; justify-content: space-between; align-items: center; padding: 20px; background: var(--card); border-radius: 12px; margin-bottom: 30px; border-bottom: 3px solid var(--cyan); }
+        .btn { padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: bold; border: none; cursor: pointer; display: inline-block; }
+        .btn-discord { background: #5865F2; color: white; }
+        .btn-add { background: var(--cyan); color: #0b0c10; width: 100%; max-width: 200px; }
         
-        .btn { padding: 10px 18px; border-radius: 6px; text-decoration: none; font-weight: bold; cursor: pointer; border: none; font-size: 0.9rem; transition: opacity 0.2s; }
-        .btn:hover { opacity: 0.8; }
-        .btn-blue { background: var(--primary); color: white; }
-        .btn-green { background: var(--success); color: white; }
-        .btn-del { background: var(--danger); color: white; padding: 4px 8px; font-size: 0.75rem; }
+        .admin-panel { background: var(--card); padding: 25px; border-radius: 12px; margin-bottom: 40px; }
+        input { background: #0b0c10; border: 1px solid var(--cyan); color: white; padding: 12px; border-radius: 6px; width: 100%; max-width: 500px; margin-bottom: 10px; }
 
-        .admin-section { background: var(--card); padding: 20px; border-radius: 12px; margin-bottom: 30px; border: 1px solid #333; }
-        .admin-section h3 { margin-top: 0; font-size: 1rem; color: #aaa; }
-        form { display: flex; gap: 10px; flex-wrap: wrap; }
-        input { background: #2a2d37; border: 1px solid #444; color: white; padding: 10px; border-radius: 6px; flex: 1; min-width: 150px; }
-
-        .char-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px; }
-        .char-card { 
-            background: var(--card); padding: 18px; border-radius: 10px; 
-            border-left: 5px solid #444; position: relative;
-            transition: transform 0.2s; border: 1px solid #2e3035;
-        }
-        .char-card:hover { transform: translateY(-3px); border-color: #444; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
+        .card { background: var(--card); border-radius: 12px; padding: 20px; position: relative; border: 1px solid #333; transition: 0.3s; }
+        .card:hover { border-color: var(--cyan); transform: translateY(-5px); }
         
-        .char-info { text-decoration: none; color: inherit; display: block; }
-        .name { display: block; font-size: 1.2rem; font-weight: bold; margin-bottom: 4px; }
-        .class-name { font-size: 0.85rem; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
-        .realm { font-size: 0.75rem; color: #888; margin-top: 5px; }
-        .ilvl-badge { position: absolute; top: 18px; right: 18px; background: #2a2d37; padding: 3px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: bold; color: #66fcf1; }
-        
-        .actions { margin-top: 15px; display: flex; justify-content: flex-end; }
+        .ilvl { position: absolute; top: 15px; right: 15px; color: var(--cyan); font-weight: bold; font-size: 1.1rem; }
+        .class-label { font-weight: bold; text-transform: uppercase; font-size: 0.8rem; margin-bottom: 5px; display: block; }
+        .owner { font-size: 0.75rem; color: #888; margin-top: 15px; border-top: 1px solid #333; padding-top: 10px; }
+        .del-link { color: #ff4d4d; font-size: 0.7rem; text-decoration: none; float: right; }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <h1>🛡️ Gilden-Verwaltung</h1>
+        <header>
+            <h1>🛡️ Gilden Dashboard</h1>
             {% if not is_logged_in %}
-                <a href="/login" class="btn btn-blue">Mit Discord einloggen</a>
+                <a href="/login" class="btn btn-discord">Login mit Discord</a>
             {% else %}
-                <div style="display:flex; align-items:center; gap:15px;">
-                    <span style="font-size: 0.9rem;">Eingeloggt als <strong>{{ user.name }}</strong></span>
-                    <a href="/login" style="font-size: 0.7rem; color: #666;">Wechseln</a>
-                </div>
+                <span>Eingeloggt: <strong>{{ user.name }}</strong></span>
             {% endif %}
-        </div>
+        </header>
 
         {% if is_admin %}
-        <div class="admin-section">
-            <h3>✨ Charakter hinzufügen (Automatisch via Raider.io)</h3>
+        <section class="admin-panel">
+            <h3>➕ Charakter hinzufügen</h3>
             <form action="/add" method="post">
-                <input type="text" name="name" placeholder="Charakter Name" required>
-                <input type="text" name="realm" placeholder="Realm (Standard: Blackhand)">
-                <button type="submit" class="btn btn-green">Hinzufügen</button>
+                <input type="text" name="rio_link" placeholder="Raider.io Link hier einfügen..." required>
+                <button type="submit" class="btn btn-add">Hinzufügen</button>
             </form>
-        </div>
+        </section>
         {% endif %}
 
-        <div class="char-grid">
+        <div class="grid">
             {% for uid, data in db.items() %}
-                {% set outer_loop = loop %}
                 {% for char in data.chars %}
-                <div class="char-card" style="border-left-color: {{ colors.get(char.class, '#444') }}">
-                    <a href="{{ char.rio_url }}" target="_blank" class="char-info">
-                        <span class="ilvl-badge">{{ char.ilvl }} iLvl</span>
-                        <span class="name">{{ char.name }}</span>
-                        <span class="class-name" style="color: {{ colors.get(char.class, '#fff') }}">{{ char.class }}</span>
-                        <div class="realm">{{ char.realm }}</div>
-                    </a>
+                <div class="card" style="border-top: 4px solid {{ colors.get(char.class, '#444') }}">
+                    <div class="ilvl">{{ char.ilvl }}</div>
+                    <span class="class-label" style="color: {{ colors.get(char.class, '#fff') }}">{{ char.class }}</span>
+                    <strong style="font-size: 1.4rem;">{{ char.name }}</strong><br>
+                    <small>{{ char.realm }}</small>
                     
-                    {% if is_admin %}
-                    <div class="actions">
-                        <a href="/delete/{{uid}}/{{loop.index0}}" class="btn btn-del" onclick="return confirm('Wirklich löschen?')">Löschen</a>
+                    <div class="owner">
+                        👤 User: {{ char.added_by }}
+                        {% if is_admin %}
+                            <a href="/delete/{{uid}}/{{loop.index0}}" class="del-link" onclick="return confirm('Löschen?')">❌ Entfernen</a>
+                        {% endif %}
                     </div>
-                    {% endif %}
+                    
+                    <a href="{{ char.rio_url }}" target="_blank" style="display:block; margin-top:10px; font-size: 0.8rem; color: var(--cyan);">Profil öffnen ↗</a>
                 </div>
                 {% endfor %}
             {% endfor %}
@@ -221,6 +223,5 @@ HTML_TEMPLATE = """
 """
 
 async def run_web():
-    import asyncio
     port = int(os.getenv("PORT", 5000))
     await app.run_task(host="0.0.0.0", port=port)
