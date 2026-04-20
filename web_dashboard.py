@@ -3,26 +3,14 @@ import json
 from quart import Quart, render_template_string
 
 app = Quart(__name__)
-
-# Pfad zur Datenbank (muss der gleiche sein wie im Bot)
 DB_FILE = "/app/data/mitglieder_db.json"
 
-# Mapping für WoW Klassenfarben
 CLASS_COLORS = {
-    "Death Knight": "#C41E3A",
-    "Demon Hunter": "#A330C9",
-    "Druid": "#FF7C0A",
-    "Evoker": "#33937F",
-    "Hunter": "#AAD372",
-    "Mage": "#3FC7EB",
-    "Monk": "#00FF98",
-    "Paladin": "#F48CBA",
-    "Priest": "#FFFFFF",
-    "Rogue": "#FFF468",
-    "Shaman": "#0070DD",
-    "Warlock": "#8788EE",
-    "Warrior": "#C69B6D",
-    "Unbekannt": "#A3A3A3"
+    "Death Knight": "#C41E3A", "Demon Hunter": "#A330C9", "Druid": "#FF7C0A",
+    "Evoker": "#33937F", "Hunter": "#AAD372", "Mage": "#3FC7EB",
+    "Monk": "#00FF98", "Paladin": "#F48CBA", "Priest": "#FFFFFF",
+    "Rogue": "#FFF468", "Shaman": "#0070DD", "Warlock": "#8788EE",
+    "Warrior": "#C69B6D", "Unbekannt": "#A3A3A3"
 }
 
 def load_db():
@@ -30,8 +18,7 @@ def load_db():
         try:
             with open(DB_FILE, "r") as f:
                 return json.load(f)
-        except:
-            return {}
+        except: return {}
     return {}
 
 @app.route("/")
@@ -46,97 +33,72 @@ async def index():
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Gilden Dashboard</title>
         <style>
-            body { 
-                font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
-                background-color: #121212; 
-                color: #e0e0e0; 
-                margin: 0; 
+            :root { --bg: #0b0c10; --card-bg: #1f2833; --text: #c5c6c7; --bright: #66fcf1; }
+            body { font-family: 'Inter', sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 20px; }
+            .header { text-align: center; padding: 40px 0; }
+            h1 { color: white; font-size: 2.5em; margin: 0; text-transform: uppercase; letter-spacing: 3px; }
+            
+            .grid { 
+                display: grid; 
+                grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); 
+                gap: 20px; 
                 padding: 20px;
             }
-            .container { max-width: 1100px; margin: auto; }
-            h1 { 
-                text-align: center; 
-                color: #fff; 
-                margin-bottom: 30px;
-                text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
-            }
-            table { 
-                width: 100%; 
-                border-collapse: collapse; 
-                background: #1e1e1e; 
-                border-radius: 8px; 
-                overflow: hidden;
-                box-shadow: 0 10px 20px rgba(0,0,0,0.5);
-            }
-            th { 
-                background-color: #2d2d2d; 
-                color: #aaaaaa; 
-                text-transform: uppercase; 
-                letter-spacing: 1px;
-                font-size: 13px;
-                padding: 15px;
-                text-align: left;
-            }
-            td { 
-                padding: 12px 15px; 
-                border-bottom: 1px solid #333;
-            }
-            tr:hover { background-color: #252525; }
             
-            .class-badge {
-                padding: 4px 10px;
-                border-radius: 20px;
-                font-size: 12px;
-                font-weight: bold;
-                text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+            .member-card {
+                background: var(--card-bg);
+                border-radius: 12px;
+                padding: 20px;
+                border-left: 5px solid #444;
+                transition: transform 0.2s, box-shadow 0.2s;
+                position: relative;
             }
             
-            .main-icon { color: #ffcc00; margin-right: 8px; font-size: 1.2em; }
-            .twink-space { margin-left: 28px; }
-            
-            .footer { 
-                text-align: center; 
-                margin-top: 40px; 
-                font-size: 0.8em; 
-                color: #666;
+            .member-card:hover {
+                transform: translateY(-5px);
+                box-shadow: 0 10px 20px rgba(0,0,0,0.4);
             }
+
+            .main-char { font-size: 1.4em; font-weight: bold; color: white; display: block; margin-bottom: 5px; }
+            .class-name { font-size: 0.9em; font-weight: bold; text-transform: uppercase; margin-bottom: 15px; display: block; }
+            
+            .twink-list { 
+                margin-top: 15px; 
+                padding-top: 10px; 
+                border-top: 1px solid #333; 
+                font-size: 0.85em;
+            }
+            .twink-item { color: #888; display: block; padding: 2px 0; }
+            
+            .realm-tag { position: absolute; top: 15px; right: 15px; font-size: 0.7em; background: #000; padding: 3px 8px; border-radius: 5px; }
         </style>
     </head>
     <body>
-        <div class="container">
+        <div class="header">
             <h1>🛡️ Gilden-Besetzung</h1>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Charakter</th>
-                        <th>Klasse</th>
-                        <th>Realm</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for uid, data in db.items() %}
-                        {% for char in data.chars %}
-                        <tr>
-                            <td>
-                                {% if loop.index0 == 0 %}
-                                    <span class="main-icon">👑</span>
-                                {% else %}
-                                    <span class="twink-space"></span>
-                                {% endif %}
-                                <strong>{{ char.name }}</strong>
-                            </td>
-                            <td>
-                                <span class="class-badge" style="background-color: {{ colors.get(char.class, '#444') }}; color: white;">
-                                    {{ char.class }}
-                                </span>
-                            </td>
-                            <td>{{ char.realm }}</td>
-                        </tr>
+            <p>Live-Übersicht der aktiven Charaktere</p>
+        </div>
+        
+        <div class="grid">
+            {% for uid, data in db.items() %}
+                {% if data.chars %}
+                <div class="member-card" style="border-left-color: {{ colors.get(data.chars[0].class, '#444') }}">
+                    <span class="realm-tag">{{ data.chars[0].realm }}</span>
+                    <span class="main-char">👑 {{ data.chars[0].name }}</span>
+                    <span class="class-name" style="color: {{ colors.get(data.chars[0].class, '#fff') }}">
+                        {{ data.chars[0].class }}
+                    </span>
+                    
+                    {% if data.chars|length > 1 %}
+                    <div class="twink-list">
+                        {% for twink in data.chars[1:] %}
+                            <span class="twink-item">🔹 {{ twink.name }} ({{ twink.class }})</span>
                         {% endfor %}
-                    {% endfor %}
-                </tbody>
-            </table>
-            <div class="footer">Live-Daten aus der Gilden-Datenbank</div>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endif %}
+            {% endfor %}
         </div>
     </body>
     </html>
@@ -144,11 +106,6 @@ async def index():
     return await render_template_string(html_template, db=db, colors=CLASS_COLORS)
 
 async def run_web():
-    # Railway nutzt die PORT Umgebungsvariable
+    import os, asyncio
     port = int(os.getenv("PORT", 5000))
-    
-    # FIX: Wir nutzen direkt das Standard-asyncio von Python
-    import asyncio
-    
-    # Wir erstellen eine Task für den Quart-Server
     await app.run_task(host="0.0.0.0", port=port)
