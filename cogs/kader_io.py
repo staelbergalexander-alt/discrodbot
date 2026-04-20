@@ -31,20 +31,21 @@ class KaderIO(commands.Cog):
         if spec in tanks: return "Tank"
         if spec in healers: return "Heiler"
         return "DPS"
+        
+    def __init__(self, bot):
+        # ... (deine bisherigen Variablen)
+        self.min_rank = int(os.getenv("MAX_KADER_RANK") or 3) # Standard: Ränge 0, 1, 2, 3 werden gezählt
 
     async def get_stats_from_raiderio(self):
-        """Liest die Gildenliste von Raider.io aus."""
+        """Liest die Gildenliste von Raider.io aus und filtert nach Rang & Level."""
         stats = {"Tank": 0, "Heiler": 0, "DPS": 0}
         
-        # URL-Encoding: Macht aus "Die Gilde" -> "Die%20Gilde"
+        import urllib.parse
         safe_guild_name = urllib.parse.quote(self.guild_name)
-        # Macht aus "Die Silberne Hand" -> "die-silberne-hand"
         safe_realm = urllib.parse.quote(self.realm.lower().replace(" ", "-"))
 
         url = f"https://raider.io/api/v1/guilds/profile?region={self.region}&realm={safe_realm}&name={safe_guild_name}&fields=members"
         
-        print(f"📡 KaderIO: Versuche API-Abruf: {url}")
-
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, timeout=10) as resp:
@@ -52,17 +53,32 @@ class KaderIO(commands.Cog):
                         data = await resp.json()
                         members = data.get('members', [])
                         
+                        count_filtered = 0
                         for m in members:
+                            # FILTER 1: Gilden-Rang (z.B. nur Rang 0 bis 3)
+                            # Raider.io Ränge: 0 = GM, 1 = Offi, etc.
+                            char_rank = m.get('rank', 10)
+                            if char_rank > self.min_rank:
+                                continue
+                                
                             char = m.get('character', {})
+                            
+                            # FILTER 2: Level (Nur Max-Level 80)
+                            if char.get('level') < 80:
+                                continue
+                            
                             spec = char.get('active_spec_name')
                             char_class = char.get('class')
                             
                             if spec:
                                 role = self.get_role_from_spec(spec, char_class)
                                 stats[role] += 1
+                                count_filtered += 1
+                        
+                        print(f"✅ KaderIO: {count_filtered} Mains nach Filter gefunden.")
                         return stats, None
                     else:
-                        return stats, f"API Fehler {resp.status} (Prüfe Realm & Gildenname)"
+                        return stats, f"API Fehler {resp.status}"
         except Exception as e:
             return stats, str(e)
 
