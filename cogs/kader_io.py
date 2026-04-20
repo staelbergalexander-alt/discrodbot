@@ -14,7 +14,7 @@ class KaderIO(commands.Cog):
         self.realm = os.getenv("REALM", "blackrock")
         self.guild_name = os.getenv("GUILD_NAME", "How to Interrupt")
         self.region = "eu"
-        self.max_rank = int(os.getenv("MAX_KADER_RANK") or 3)
+        self.max_rank = int(os.getenv("MAX_KADER_RANK") or 10)
         
         self.recruitment_msg_id = int(os.getenv("RECRUITMENT_MSG_ID") or 0)
         self.recruitment_channel_id = int(os.getenv("RECRUITMENT_CH_ID") or 0)
