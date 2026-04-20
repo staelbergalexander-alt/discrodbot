@@ -2,89 +2,65 @@ import discord
 from discord.ext import commands
 import os
 import json
-import asyncio  # NEU: Für den parallelen Start
-from web_dashboard import run_web  # NEU: Importiert den Webserver
+import asyncio
+from dotenv import load_dotenv
 
-# Wichtig: Alle Views importieren, damit sie registriert werden können
-from cogs.utilities import RaidPollView
-from cogs.recruitment import ThreadActionView
-from cogs.dashboard import DashboardView 
+# Importiere die Webserver-Funktion aus deiner web_dashboard.py
+from web_dashboard import run_web
 
-# IDs aus Railway laden
-SERVER_ID = int(os.getenv('SERVER_ID') or 0)
+# Lade Umgebungsvariablen (.env Datei)
+load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
+SERVER_ID = int(os.getenv('SERVER_ID') or 0)
 
-class GildenBot(commands.Bot):
-    def __init__(self):
-        intents = discord.Intents.default()
-        intents.message_content = True
-        intents.members = True
-        super().__init__(command_prefix="!", intents=intents)
+# Bot-Setup mit allen Berechtigungen (Intents)
+intents = discord.Intents.default()
+intents.members = True  # Wichtig, um Rollen und Mitglieder zu sehen
+intents.message_content = True
 
-    def check_db_format(self):
-        db_path = "/app/data/mitglieder_db.json"
-        if os.path.exists(db_path):
-            with open(db_path, "r") as f:
-                try: 
-                    data = json.load(f)
-                    updated = False
-                    for uid in list(data.keys()):
-                        if isinstance(data[uid], dict) and "chars" not in data[uid]:
-                            old_name = data[uid].get("name", "Unbekannt")
-                            old_realm = data[uid].get("realm", "Blackhand")
-                            data[uid] = {"chars": [{"name": old_name, "realm": old_realm}]}
-                            updated = True
-                    if updated:
-                        with open(db_path, "w") as f_out:
-                            json.dump(data, f_out, indent=4)
-                        print("Datenbank-Format wurde aktualisiert.")
-                except: 
-                    print("Datenbank konnte nicht gelesen werden.")
+bot = commands.Bot(command_prefix='/', intents=intents)
 
-    async def setup_hook(self):
-        # 1. Datenbank prüfen
-        self.check_db_format()
+# Pfad zur Datenbank
+DB_FILE = "data/mitglieder_db.json"
 
-        # 2. Permanente Views registrieren
-        self.add_view(RaidPollView())
-        self.add_view(ThreadActionView())
-        self.add_view(DashboardView())
-        print("Permanente Views (Umfrage, Recruitment & Dashboard) registriert.")
-
-        # 3. Cogs automatisch laden
-        for filename in os.listdir('./cogs'):
-            if filename.endswith('.py'):
-                try:
-                    await self.load_extension(f'cogs.{filename[:-3]}')
-                    print(f'Cog geladen: {filename}')
-                except Exception as e:
-                    print(f'Fehler beim Laden von {filename}: {e}')
-        
-        # 4. Slash-Commands synchronisieren
-        if SERVER_ID != 0:
-            guild = discord.Object(id=SERVER_ID)
-            self.tree.copy_global_to(guild=guild)
-            await self.tree.sync(guild=guild)
-            print("Slash-Commands synchronisiert.")
-
-bot = GildenBot()
+# Sicherstellen, dass der Ordner existiert
+if not os.path.exists("data"):
+    os.makedirs("data")
 
 @bot.event
 async def on_ready():
-    print(f'Eingeloggt als {bot.user} (ID: {bot.user.id})')
-    print('------')
+    print(f'✅ Bot eingeloggt als {bot.user.name}')
+    print(f'🌐 Web-Dashboard sollte jetzt unter Port 5000 erreichbar sein.')
 
-# --- NEU: ASYNCHRONE START-LOGIK ---
+# Beispiel-Befehl zum Testen der Datenbank
+@bot.command(name='sync_classes')
+async def sync_classes(ctx):
+    # Hier kommt deine Logik rein, um die JSON zu füllen
+    # Dies ist nur ein Platzhalter für dein bestehendes System
+    await ctx.send("Daten werden synchronisiert...")
+
+# --- DER WICHTIGSTE TEIL: DER START-PROZESS ---
+
 async def start_everything():
-    # Wir erstellen zwei Tasks: Einer für die Webseite, einer für den Bot
-    # gather wartet, bis beide gestartet sind
+    """Startet den Bot und das Web-Dashboard gleichzeitig."""
+    if not TOKEN:
+        print("❌ FEHLER: Kein DISCORD_TOKEN in der .env oder den Umgebungsvariablen gefunden!")
+        return
+
     try:
+        # Wir starten beides parallel mit asyncio.gather
+        # Wichtig: Wir übergeben 'bot' an run_web, damit das Dashboard 
+        # die Rollen live abfragen kann!
         await asyncio.gather(
-            run_web(bot),     # Startet den Quart-Webserver aus web_dashboard.py
-            bot.start(TOKEN) # Startet den Discord Bot
+            run_web(bot),  
+            bot.start(TOKEN)
         )
     except Exception as e:
-        print(f"Kritischer Fehler beim Starten: {e}")
+        print(f"❌ Kritischer Fehler beim Starten: {e}")
 
 if __name__ == "__main__":
-    await asyncio.gather(run_web(bot), ...)
+    # Startet das gesamte System
+    try:
+        asyncio.run(start_everything())
+    except KeyboardInterrupt:
+        print("Stopping...")
