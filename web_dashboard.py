@@ -33,26 +33,28 @@ async def index():
     guild = bot_instance.get_guild(SERVER_ID) if bot_instance and bot_instance.is_ready() else None
 
     for uid, user_data in members_data.items():
-        role_info = {"name": "Gast", "color": "slate-500", "priority": 4}
+        role_info = {"name": "Gast", "color": "slate", "priority": 4}
         joined_date = None
+        display_name = f"User {uid[-4:]}" # Fallback Name
         
         if guild:
             member = guild.get_member(int(uid))
             if member:
-                # Beitrittsdatum formatieren (TT.MM.JJJJ)
+                display_name = member.display_name
                 if member.joined_at:
                     joined_date = member.joined_at.strftime("%d.%m.%Y")
                 
                 role_ids = [r.id for r in member.roles]
                 if OFFIZIER_ROLLE_ID in role_ids:
-                    role_info = {"name": "Offizier", "color": "red-500", "priority": 1}
+                    role_info = {"name": "Offizier", "color": "red", "priority": 1}
                 elif MITGLIED_ROLLE_ID in role_ids:
-                    role_info = {"name": "Mitglied", "color": "emerald-500", "priority": 2}
+                    role_info = {"name": "Mitglied", "color": "emerald", "priority": 2}
                 elif BEWERBER_ROLLE_ID in role_ids:
-                    role_info = {"name": "Bewerber", "color": "amber-500", "priority": 3}
+                    role_info = {"name": "Bewerber", "color": "amber", "priority": 3}
 
         enhanced_list.append({
             "uid": uid,
+            "name": display_name,
             "chars": user_data.get("chars", []),
             "role": role_info,
             "joined_at": joined_date
@@ -69,60 +71,87 @@ async def index():
     <html lang="de">
     <head>
         <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
         <title>Gilden Dashboard</title>
+        <style>
+            body { font-family: 'Inter', sans-serif; background: radial-gradient(circle at top right, #1e293b, #0f172a); }
+            .card-gradient { background: linear-gradient(145deg, #1e293b 0%, #111827 100%); }
+        </style>
     </head>
-    <body class="bg-[#0f172a] text-slate-200 min-h-screen font-sans">
-        <header class="p-8 bg-[#1e293b] border-b border-indigo-500/50 shadow-2xl mb-10 text-center">
-            <h1 class="text-4xl font-black text-indigo-400 tracking-tighter italic">🛡️ GILDEN DASHBOARD</h1>
-            <div class="flex justify-center gap-4 mt-4">
-                <span class="bg-indigo-500/20 text-indigo-300 px-4 py-1 rounded-full text-sm border border-indigo-500/30">👤 Spieler: {{ stats.total_members }}</span>
-                <span class="bg-emerald-500/20 text-emerald-300 px-4 py-1 rounded-full text-sm border border-emerald-500/30">⚔️ Charaktere: {{ stats.total_chars }}</span>
+    <body class="text-slate-200 min-h-screen pb-20">
+        
+        <header class="relative py-12 px-4 mb-12 overflow-hidden">
+            <div class="absolute inset-0 bg-indigo-600/10 blur-3xl -z-10"></div>
+            <div class="container mx-auto text-center">
+                <h1 class="text-5xl font-extrabold tracking-tight text-white mb-4 italic uppercase">
+                    🛡️ Gilden<span class="text-indigo-500 underline decoration-indigo-500/30">Dashboard</span>
+                </h1>
+                <div class="flex justify-center items-center gap-6">
+                    <div class="px-6 py-2 bg-slate-800/50 rounded-2xl border border-slate-700 backdrop-blur-sm">
+                        <p class="text-xs text-slate-400 uppercase font-bold tracking-widest">Mitglieder</p>
+                        <p class="text-2xl font-black text-indigo-400">{{ stats.total_members }}</p>
+                    </div>
+                    <div class="px-6 py-2 bg-slate-800/50 rounded-2xl border border-slate-700 backdrop-blur-sm">
+                        <p class="text-xs text-slate-400 uppercase font-bold tracking-widest">Charaktere</p>
+                        <p class="text-2xl font-black text-emerald-400">{{ stats.total_chars }}</p>
+                    </div>
+                </div>
             </div>
         </header>
 
-        <div class="container mx-auto px-4 pb-20">
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+        <main class="container mx-auto px-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
                 {% for user in members_list %}
-                <div class="bg-[#1e293b] rounded-2xl p-6 border border-slate-700 hover:border-indigo-500/50 transition-all shadow-xl relative overflow-hidden">
+                <div class="card-gradient rounded-3xl border border-slate-700/50 shadow-2xl overflow-hidden flex flex-col transition-transform hover:scale-[1.01]">
                     
-                    <div class="absolute top-0 right-0 flex flex-col items-end">
-                        <div class="px-3 py-1 bg-{{ user.role.color }}/20 border-b border-l border-{{ user.role.color }}/30 rounded-bl-lg">
-                            <span class="text-[10px] font-bold text-{{ user.role.color }} uppercase tracking-tighter">{{ user.role.name }}</span>
+                    <div class="p-5 border-b border-slate-700/50 flex justify-between items-center bg-slate-800/30">
+                        <div>
+                            <h2 class="text-xl font-bold text-white tracking-tight">{{ user.name }}</h2>
+                            <p class="text-[10px] font-mono text-slate-500 uppercase">ID: ...{{ user.uid[-6:] }}</p>
                         </div>
-                        
-                        {% if user.role.name == "Bewerber" and user.joined_at %}
-                        <div class="mr-2 mt-1">
-                            <span class="text-[9px] text-slate-500 font-mono">Seit: {{ user.joined_at }}</span>
+                        <div class="text-right">
+                            <span class="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-{{ user.role.color }}-500/10 border border-{{ user.role.color }}-500/20 text-{{ user.role.color }}-400">
+                                {{ user.role.name }}
+                            </span>
+                            {% if user.joined_at %}
+                            <p class="text-[9px] text-slate-500 mt-1 font-medium italic">Seit {{ user.joined_at }}</p>
+                            {% endif %}
                         </div>
-                        {% endif %}
                     </div>
 
-                    <div class="mb-4">
-                        <h2 class="text-slate-400 text-[10px] font-mono opacity-50">UID: ...{{ user.uid[-6:] }}</h2>
-                    </div>
-
-                    <div class="space-y-4">
+                    <div class="p-5 space-y-4 flex-grow">
                         {% for char in user.chars %}
-                        <div class="bg-[#0f172a]/50 p-4 rounded-xl border-l-4 border-indigo-500 shadow-inner">
-                            <div class="flex justify-between items-start">
+                        <div class="group bg-slate-900/50 rounded-2xl p-4 border border-slate-700/30 hover:border-indigo-500/30 transition-all">
+                            <div class="flex justify-between items-center">
                                 <div>
-                                    <h3 class="text-xl font-bold text-white leading-tight">{{ char.name }}</h3>
-                                    <p class="text-sm text-indigo-400 font-medium">{{ char.class }}</p>
+                                    <div class="flex items-center gap-2">
+                                        <h3 class="font-bold text-slate-100">{{ char.name }}</h3>
+                                        {% if loop.first %}
+                                        <span class="text-[8px] bg-indigo-500 text-white px-1.5 py-0.5 rounded font-black uppercase">Main</span>
+                                        {% endif %}
+                                    </div>
+                                    <p class="text-xs text-indigo-400 font-semibold">{{ char.class }}</p>
+                                    <p class="text-[9px] text-slate-500 uppercase tracking-tighter">{{ char.realm }}</p>
                                 </div>
-                                <div class="bg-indigo-500/10 border border-indigo-500/50 text-indigo-300 px-3 py-1 rounded-lg text-center">
-                                    <span class="text-[8px] block text-slate-500 uppercase font-bold">iLvl</span>
-                                    <span class="font-mono font-bold">{{ char.ilvl }}</span>
+                                <div class="text-right">
+                                    <p class="text-[8px] text-slate-500 font-bold uppercase">Item Level</p>
+                                    <p class="text-xl font-black text-white font-mono">{{ char.ilvl }}</p>
                                 </div>
                             </div>
-                            <div class="mt-4 pt-3 border-t border-slate-700/50 flex justify-between items-center">
-                                <a href="{{ char.rio_url }}" target="_blank" class="text-xs text-orange-400 hover:text-orange-300">🔗 Raider.io</a>
-                                <div class="flex gap-2 items-center">
-                                    {% if loop.first %}
-                                        <span class="text-[9px] bg-indigo-600 text-white px-2 py-0.5 rounded-full font-bold">MAIN</span>
-                                    {% endif %}
-                                    <a href="/delete/{{ user.uid }}/{{ loop.index0 }}" onclick="return confirm('Löschen?')" class="text-slate-600 hover:text-red-500 transition-colors">🗑️</a>
-                                </div>
+                            
+                            <div class="mt-3 pt-3 border-t border-slate-800 flex justify-between items-center">
+                                <a href="{{ char.rio_url }}" target="_blank" class="text-[10px] font-bold text-orange-400 hover:text-orange-300 transition-colors flex items-center gap-1">
+                                    Raider.io ↗
+                                </a>
+                                <a href="/delete/{{ user.uid }}/{{ loop.index0 }}" 
+                                   onclick="return confirm('Charakter {{ char.name }} entfernen?')" 
+                                   class="opacity-0 group-hover:opacity-100 transition-opacity text-slate-600 hover:text-red-500">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    </svg>
+                                </a>
                             </div>
                         </div>
                         {% endfor %}
@@ -130,7 +159,7 @@ async def index():
                 </div>
                 {% endfor %}
             </div>
-        </div>
+        </main>
     </body>
     </html>
     """
