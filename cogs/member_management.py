@@ -38,14 +38,5 @@ class MemberManagement(commands.Cog):
         self.update_json(member)
         print(f"{member.name} wurde zur Datenbank hinzugefügt.")
 
-    @commands.command(name="sync")
-    @commands.has_permissions(administrator=True)
-    async def sync_members(self, ctx):
-        """Fügt alle aktuellen Server-Mitglieder zur JSON hinzu."""
-        for member in ctx.guild.members:
-            if not member.bot:
-                self.update_json(member)
-        await ctx.send("✅ Alle Mitglieder wurden mit dem Dashboard synchronisiert!")
-
 async def setup(bot):
     await bot.add_cog(MemberManagement(bot))
