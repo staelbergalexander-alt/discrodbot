@@ -3,59 +3,55 @@
 <head>
     <meta charset="UTF-8">
     <script src="https://cdn.tailwindcss.com"></script>
-    <title>Gilden-Dashboard</title>
-    <style>
-        .class-border-Druid { border-left: 5px solid #FF7C0A; }
-        .class-border-Mage { border-left: 5px solid #3FC7EB; }
-        .class-border-Paladin { border-left: 5px solid #F48CBA; }
-        /* Weitere Klassenfarben hier ergänzen */
-    </style>
+    <title>Gilden Dashboard</title>
 </head>
-<body class="bg-slate-900 text-slate-100 min-h-screen font-sans">
+<body class="bg-[#0f172a] text-slate-200 min-h-screen font-sans">
     
-    <nav class="p-6 bg-slate-800 border-b border-indigo-500 shadow-xl mb-10">
-        <h1 class="text-3xl font-bold text-center text-indigo-400 font-mono tracking-tighter">🛡️ DISCORD BOT DASHBOARD</h1>
-    </nav>
-
-    <div class="container mx-auto px-4">
-        <div class="flex gap-6 mb-10 justify-center">
-            <div class="bg-slate-800 p-4 rounded-lg border border-slate-700 w-48 text-center">
-                <p class="text-xs text-slate-400 uppercase">Spieler</p>
-                <p class="text-2xl font-bold">{{ stats.total_members }}</p>
-            </div>
-            <div class="bg-slate-800 p-4 rounded-lg border border-slate-700 w-48 text-center">
-                <p class="text-xs text-slate-400 uppercase">Charaktere</p>
-                <p class="text-2xl font-bold">{{ stats.total_chars }}</p>
-            </div>
+    <header class="p-8 bg-[#1e293b] border-b border-indigo-500/50 shadow-2xl mb-10 text-center">
+        <h1 class="text-4xl font-black text-indigo-400 tracking-tighter italic">🛡️ GILDEN DASHBOARD</h1>
+        <div class="flex justify-center gap-4 mt-4">
+            <span class="bg-indigo-500/20 text-indigo-300 px-4 py-1 rounded-full text-sm border border-indigo-500/30">
+                👤 Spieler: {{ stats.total_members }}
+            </span>
+            <span class="bg-emerald-500/20 text-emerald-300 px-4 py-1 rounded-full text-sm border border-emerald-500/30">
+                ⚔️ Charaktere: {{ stats.total_chars }}
+            </span>
         </div>
+    </header>
 
+    <div class="container mx-auto px-4 pb-20">
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            
             {% for uid, user_data in members.items() %}
-            <div class="bg-slate-800 rounded-xl p-5 border border-slate-700 shadow-2xl">
-                <h2 class="text-indigo-400 font-bold mb-4 border-b border-slate-700 pb-2">
-                    Spieler-ID: {{ uid[-5:] }}... </h2>
-                
+            <div class="bg-[#1e293b] rounded-2xl p-6 border border-slate-700 hover:border-indigo-500/50 transition-all shadow-xl">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-slate-400 text-xs font-mono">ID: ...{{ uid[-6:] }}</h2>
+                    <span class="text-[10px] bg-slate-700 px-2 py-0.5 rounded text-slate-400 uppercase tracking-widest">User Card</span>
+                </div>
+
                 <div class="space-y-4">
                     {% for char in user_data.chars %}
-                    <div class="bg-slate-900/50 p-3 rounded border-l-4 shadow-inner 
-                                {% if loop.first %} border-indigo-500 bg-indigo-900/10 {% else %} border-slate-600 {% endif %}">
+                    <div class="bg-[#0f172a]/50 p-4 rounded-xl border-l-4 border-indigo-500 shadow-inner">
                         <div class="flex justify-between items-start">
                             <div>
-                                <p class="text-lg font-bold">{{ char.name }}</p>
-                                <p class="text-xs text-slate-400">{{ char.class }} - {{ char.realm }}</p>
+                                <h3 class="text-xl font-bold text-white leading-tight">{{ char.name }}</h3>
+                                <p class="text-sm text-indigo-400 font-medium">{{ char.class }}</p>
+                                <p class="text-[10px] text-slate-500 uppercase">{{ char.realm }}</p>
                             </div>
-                            <div class="text-right">
-                                <span class="bg-slate-800 text-indigo-300 px-2 py-1 rounded text-xs font-mono border border-indigo-500/30">
-                                    iLvl {{ char.ilvl }}
-                                </span>
+                            <div class="bg-indigo-500/10 border border-indigo-500/50 text-indigo-300 px-3 py-1 rounded-lg text-center">
+                                <span class="text-xs block text-slate-500 uppercase font-bold text-[8px]">iLvl</span>
+                                <span class="font-mono font-bold">{{ char.ilvl }}</span>
                             </div>
                         </div>
-                        <div class="mt-3 flex justify-between items-center">
-                            <a href="{{ char.rio_url }}" target="_blank" class="text-[10px] text-orange-400 hover:underline">Raider.io ↗</a>
+                        
+                        <div class="mt-4 pt-3 border-t border-slate-700/50 flex justify-between items-center">
+                            <a href="{{ char.rio_url }}" target="_blank" class="text-xs text-orange-400 hover:text-orange-300 flex items-center gap-1">
+                                🔗 Raider.io
+                            </a>
                             {% if loop.first %}
-                            <span class="text-[10px] bg-indigo-500 text-white px-2 rounded-full uppercase font-bold tracking-tighter">Main</span>
+                                <span class="text-[9px] bg-indigo-600 text-white px-2 py-0.5 rounded-full font-bold">MAIN</span>
                             {% else %}
-                            <span class="text-[10px] text-slate-500 uppercase">Twink</span>
+                                <span class="text-[9px] bg-slate-700 text-slate-400 px-2 py-0.5 rounded-full">TWINK</span>
                             {% endif %}
                         </div>
                     </div>
@@ -63,11 +59,8 @@
                 </div>
             </div>
             {% endfor %}
+
         </div>
     </div>
-
-    <footer class="text-center py-20 text-slate-600 text-xs uppercase tracking-widest">
-        Gilden-System v2.0 | Connected to mitglieder_db.json
-    </footer>
 </body>
 </html>
