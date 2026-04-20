@@ -2,8 +2,8 @@ import os
 import json
 import discord
 import asyncio
-import aiohttp  # WICHTIG: Für schnelle, asynchrone API-Abfragen
-from quart import Quart, render_template_string, redirect, url_for
+import aiohttp
+from quart import Quart, render_template_string, redirect, url_for, request
 from datetime import datetime
 
 app = Quart(__name__)
@@ -11,196 +11,153 @@ app = Quart(__name__)
 # Pfade & IDs
 DB_FILE = "/app/data/mitglieder_db.json" if os.path.exists("/app/data/") else "data/mitglieder_db.json"
 SERVER_ID = int(os.getenv('SERVER_ID') or 0)
+FORUM_CHANNEL_ID = int(os.getenv('FORUM_CHANNEL_ID') or 0) # NEU: Deine Forum-ID
 OFFIZIER_ROLLE_ID = int(os.getenv('OFFIZIER_ROLLE_ID') or 0)
 MITGLIED_ROLLE_ID = int(os.getenv('MITGLIED_ROLLE_ID') or 0)
 BEWERBER_ROLLE_ID = int(os.getenv('BEWERBER_ROLLE_ID') or 0)
 
 bot_instance = None
 
-# Hilfsfunktion: Holt das iLvl live von Raider.io
 async def fetch_real_ilvl(name, realm):
     clean_name = name.strip().lower()
     clean_realm = realm.strip().lower().replace(" ", "-")
     url = f"https://raider.io/api/v1/characters/profile?region=eu&realm={clean_realm}&name={clean_name}&fields=gear"
-    
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, timeout=2) as response:
                 if response.status == 200:
                     data = await response.json()
-                    return data.get('gear', {}).get('item_level_equipped', 0)
-    except:
-        pass
-    return None # Falls Fehler, nutzen wir das alte iLvl aus der DB
+                    return data.get('gear', {}).get('item_level_equipped', 0), data.get('class'), data.get('active_spec_name')
+    except: pass
+    return None, None, None
 
 @app.route('/')
 async def index():
     members_data = {}
     if os.path.exists(DB_FILE):
-        try:
-            with open(DB_FILE, "r", encoding="utf-8") as f:
-                content = f.read().strip()
-                if content:
-                    members_data = json.loads(content)
-        except Exception as e:
-            print(f"Fehler beim Laden: {e}")
+        with open(DB_FILE, "r", encoding="utf-8") as f:
+            try: members_data = json.load(f)
+            except: pass
 
     enhanced_list = []
-    total_chars = 0
     guild = bot_instance.get_guild(SERVER_ID) if bot_instance and bot_instance.is_ready() else None
 
-    # Wir sammeln alle API-Anfragen, um sie gleichzeitig (schnell) auszuführen
     for uid, user_data in members_data.items():
         role_info = {"name": "Gast", "color": "slate", "priority": 4}
         display_name = f"User {uid[-4:]}"
         joined_date = None
-        
         if guild:
             member = guild.get_member(int(uid))
             if member:
                 display_name = member.display_name
-                if member.joined_at:
-                    joined_date = member.joined_at.strftime("%d.%m.%Y")
-                
+                joined_date = member.joined_at.strftime("%d.%m.%Y") if member.joined_at else None
                 role_ids = [r.id for r in member.roles]
-                if OFFIZIER_ROLLE_ID in role_ids:
-                    role_info = {"name": "Offizier", "color": "violet", "priority": 1}
-                elif MITGLIED_ROLLE_ID in role_ids:
-                    role_info = {"name": "Mitglied", "color": "emerald", "priority": 2}
-                elif BEWERBER_ROLLE_ID in role_ids:
-                    role_info = {"name": "Bewerber", "color": "amber", "priority": 3}
+                if OFFIZIER_ROLLE_ID in role_ids: role_info = {"name": "Offizier", "color": "violet", "priority": 1}
+                elif MITGLIED_ROLLE_ID in role_ids: role_info = {"name": "Mitglied", "color": "emerald", "priority": 2}
+                elif BEWERBER_ROLLE_ID in role_ids: role_info = {"name": "Bewerber", "color": "amber", "priority": 3}
 
-        processed_chars = []
-        for char in user_data.get("chars", []):
-            # LIVE ILVL ABFRAGE
-            live_ilvl = await fetch_real_ilvl(char['name'], char.get('realm', 'blackhand'))
-            
-            # Raider.io Link generieren
-            clean_name = char['name'].strip().lower()
-            clean_realm = char.get('realm', 'blackhand').strip().lower().replace(" ", "-")
-            
-            char_copy = char.copy()
-            if live_ilvl:
-                char_copy['ilvl'] = live_ilvl # Überschreibe mit echtem Wert
-            char_copy['rio_url'] = f"https://raider.io/characters/eu/{clean_realm}/{clean_name}"
-            processed_chars.append(char_copy)
-
-        enhanced_list.append({
-            "uid": uid,
-            "name": display_name,
-            "chars": processed_chars,
-            "role": role_info,
-            "joined_at": joined_date
-        })
-        total_chars += len(processed_chars)
+        enhanced_list.append({"uid": uid, "name": display_name, "chars": user_data.get("chars", []), "role": role_info, "joined_at": joined_date})
 
     enhanced_list.sort(key=lambda x: x['role']['priority'])
-    stats = {"total_members": len(members_data), "total_chars": total_chars}
 
-    # --- HTML TEMPLATE (Gleiches Design wie zuvor) ---
     html_template = """
     <!DOCTYPE html>
     <html lang="de">
     <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <script src="https://cdn.tailwindcss.com"></script>
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet">
+        <meta charset="UTF-8"><script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+        <style>body { font-family: 'Inter', sans-serif; background: #0b1120; }</style>
         <title>Gilden Dashboard</title>
-        <style>
-            body { font-family: 'Inter', sans-serif; background-color: #0b1120; }
-            .glass { background: rgba(30, 41, 59, 0.5); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.05); }
-            .char-card:hover .delete-btn { opacity: 1; }
-        </style>
     </head>
-    <body class="text-slate-200 min-h-screen pb-24">
-        <header class="p-6 md:p-10 border-b border-slate-800 bg-[#0f172a] shadow-xl mb-12 text-center md:text-left">
-            <div class="container mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
-                <div class="flex items-center gap-4">
-                    <span class="text-4xl">🛡️</span>
-                    <div>
-                        <h1 class="text-3xl font-black tracking-tighter text-white uppercase italic">Gilden<span class="text-indigo-500">Dashboard</span></h1>
-                        <p class="text-[10px] text-slate-500 font-mono tracking-widest">LIVE ITEM LEVEL SYNC</p>
-                    </div>
+    <body class="text-slate-200 p-4 md:p-10">
+        <div class="container mx-auto max-w-6xl">
+            
+            <div class="flex flex-col md:flex-row justify-between items-center mb-12 gap-6 bg-slate-900/50 p-8 rounded-3xl border border-slate-800">
+                <div>
+                    <h1 class="text-4xl font-black italic uppercase text-white">Gilden<span class="text-indigo-500">Admin</span></h1>
+                    <p class="text-slate-500 text-sm">Bewerber hinzufügen & Discord Forum erstellen</p>
                 </div>
-                <div class="flex items-center gap-3">
-                    <div class="px-5 py-2 glass rounded-2xl border border-indigo-500/20">
-                        <p class="text-[10px] text-slate-500 uppercase font-bold tracking-widest">Spieler</p>
-                        <p class="text-xl font-black text-indigo-400">{{ stats.total_members }}</p>
-                    </div>
-                    <div class="px-5 py-2 glass rounded-2xl border border-emerald-500/20">
-                        <p class="text-[10px] text-slate-500 uppercase font-bold tracking-widest">Charaktere</p>
-                        <p class="text-xl font-black text-emerald-400">{{ stats.total_chars }}</p>
-                    </div>
-                </div>
+                
+                <form action="/add_applicant" method="post" class="flex flex-wrap gap-3">
+                    <input name="name" placeholder="Char Name" class="bg-slate-800 border border-slate-700 px-4 py-2 rounded-xl focus:outline-none focus:border-indigo-500 transition-all text-white" required>
+                    <input name="realm" placeholder="Server (z.B. Blackhand)" class="bg-slate-800 border border-slate-700 px-4 py-2 rounded-xl focus:outline-none focus:border-indigo-500 transition-all text-white" required>
+                    <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-6 py-2 rounded-xl transition-all shadow-lg shadow-indigo-500/20">+ Hinzufügen</button>
+                </form>
             </div>
-        </header>
 
-        <main class="container mx-auto px-4">
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                 {% for user in members_list %}
-                <div class="glass rounded-3xl p-6 border-l-4 border-{{ user.role.color }}-500 shadow-2xl relative transition-transform hover:scale-[1.01]">
+                <div class="bg-slate-900/40 rounded-3xl p-6 border border-slate-800 relative hover:border-{{user.role.color}}-500/30 transition-all">
                     <div class="absolute top-4 right-4 text-right">
-                        <span class="px-3 py-1 bg-{{ user.role.color }}-950/50 border border-{{ user.role.color }}-500/30 text-{{ user.role.color }}-300 text-[10px] font-bold rounded-full uppercase tracking-widest">
-                            {{ user.role.name }}
-                        </span>
-                        {% if user.joined_at %}<p class="text-[9px] text-slate-600 mt-1 font-mono italic">Seit {{ user.joined_at }}</p>{% endif %}
+                        <span class="px-2 py-0.5 bg-{{user.role.color}}-500/10 text-{{user.role.color}}-400 text-[10px] font-bold rounded-full border border-{{user.role.color}}-500/20 uppercase tracking-widest">{{user.role.name}}</span>
                     </div>
-                    <div class="mb-6 pb-4 border-b border-slate-800">
-                        <h2 class="text-2xl font-extrabold text-white">{{ user.name }}</h2>
-                        <p class="text-[10px] font-mono text-slate-600 uppercase tracking-widest">UID: ...{{ user.uid[-6:] }}</p>
-                    </div>
-                    <div class="space-y-4">
+                    <h2 class="text-xl font-bold text-white mb-4">{{user.name}}</h2>
+                    <div class="space-y-3">
                         {% for char in user.chars %}
-                        <div class="char-card bg-[#0f172a] rounded-2xl p-4 border border-slate-800 hover:border-indigo-500/30 transition-all">
-                            <div class="flex justify-between items-center">
-                                <div>
-                                    <div class="flex items-center gap-2">
-                                        <h3 class="text-lg font-bold text-slate-100">{{ char.name }}</h3>
-                                        {% if loop.first %}<span class="text-[8px] bg-indigo-600 text-white px-1.5 py-0.5 rounded-full font-black uppercase">Main</span>{% endif %}
-                                    </div>
-                                    <p class="text-sm text-indigo-400 font-semibold">{{ char.class }}</p>
-                                    <p class="text-[9px] text-slate-600 uppercase tracking-widest">{{ char.realm }}</p>
-                                </div>
-                                <div class="text-right">
-                                    <p class="text-[9px] text-slate-600 font-bold uppercase">iLvl</p>
-                                    <p class="text-3xl font-black text-white font-mono">{{ char.ilvl }}</p>
-                                </div>
+                        <div class="bg-slate-950/50 p-3 rounded-2xl border border-slate-800 flex justify-between items-center group">
+                            <div>
+                                <p class="font-bold text-slate-200">{{char.name}}</p>
+                                <p class="text-[10px] text-indigo-400 font-bold uppercase">{{char.class}} ({{char.ilvl}})</p>
                             </div>
-                            <div class="mt-4 pt-3 border-t border-slate-800/50 flex justify-between items-center">
-                                <a href="{{ char.rio_url }}" target="_blank" class="text-xs text-orange-500 font-bold uppercase tracking-tighter hover:text-orange-300">
-                                    Raider.io Profile
-                                </a>
-                                <a href="/delete/{{ user.uid }}/{{ loop.index0 }}" onclick="return confirm('{{ char.name }} löschen?')" class="delete-btn opacity-0 transition-opacity text-slate-700 hover:text-red-500">
-                                    🗑️
-                                </a>
-                            </div>
+                            <a href="/delete/{{user.uid}}/{{loop.index0}}" class="text-slate-800 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100">🗑️</a>
                         </div>
                         {% endfor %}
                     </div>
                 </div>
                 {% endfor %}
             </div>
-        </main>
+        </div>
     </body>
     </html>
     """
-    return await render_template_string(html_template, members_list=enhanced_list, stats=stats)
+    return await render_template_string(html_template, members_list=enhanced_list)
 
-# ... (delete_char und run_web bleiben gleich) ...
+@app.route('/add_applicant', method=['POST'])
+async def add_applicant():
+    form = await request.form
+    name = form.get('name')
+    realm = form.get('realm')
+    
+    if not name or not realm: return redirect('/')
+
+    # 1. Daten von Raider.io holen
+    ilvl, char_class, spec = await fetch_real_ilvl(name, realm)
+    
+    # 2. Discord Forum Post erstellen
+    if bot_instance and bot_instance.is_ready():
+        forum_channel = bot_instance.get_channel(FORUM_CHANNEL_ID)
+        if forum_channel:
+            content = f"**Neue Bewerbung eingegangen!**\n\n**Name:** {name}\n**Server:** {realm}\n**Klasse:** {char_class or 'Unbekannt'}\n**iLvl:** {ilvl or '?'}\n\n[Raider.io Profil](https://raider.io/characters/eu/{realm.replace(' ', '-').lower()}/{name.lower()})"
+            # Thread im Forum erstellen
+            await forum_channel.create_thread(name=f"Bewerbung: {name} ({char_class or '?'})", content=content)
+
+    # 3. In Datenbank speichern (als neuer Gast/Bewerber ohne Discord-Verknüpfung)
+    # Hier nutzen wir den Namen als temporäre ID, falls kein Discord-User verknüpft ist
+    temp_id = f"manual_{name.lower()}"
+    
+    with open(DB_FILE, "r+", encoding="utf-8") as f:
+        data = json.load(f)
+        new_char = {"name": name, "realm": realm, "class": char_class or "Unbekannt", "ilvl": ilvl or 0}
+        if temp_id not in data: data[temp_id] = {"chars": []}
+        data[temp_id]["chars"].append(new_char)
+        f.seek(0)
+        json.dump(data, f, indent=4, ensure_ascii=False)
+        f.truncate()
+
+    return redirect('/')
+
+# (Restliche Funktionen wie delete_char und run_web bleiben gleich)
 @app.route('/delete/<uid>/<int:char_idx>')
 async def delete_char(uid, char_idx):
     if os.path.exists(DB_FILE):
-        try:
-            with open(DB_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            if uid in data and "chars" in data[uid]:
-                data[uid]["chars"].pop(char_idx)
-                if not data[uid]["chars"]: del data[uid]
-                with open(DB_FILE, "w", encoding="utf-8") as f:
-                    json.dump(data, f, indent=4, ensure_ascii=False)
-        except Exception as e: print(f"Löschfehler: {e}")
-    return redirect(url_for('index'))
+        with open(DB_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if uid in data:
+            data[uid]["chars"].pop(char_idx)
+            if not data[uid]["chars"]: del data[uid]
+            with open(DB_FILE, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=4, ensure_ascii=False)
+    return redirect('/')
 
 async def run_web(bot=None):
     global bot_instance
