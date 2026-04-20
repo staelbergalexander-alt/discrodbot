@@ -3,6 +3,7 @@ import json
 import discord
 import asyncio
 from quart import Quart, render_template_string, redirect, url_for
+from datetime import datetime
 
 app = Quart(__name__)
 
@@ -32,12 +33,16 @@ async def index():
     guild = bot_instance.get_guild(SERVER_ID) if bot_instance and bot_instance.is_ready() else None
 
     for uid, user_data in members_data.items():
-        # Standard: Gast (niedrigste Priorität)
         role_info = {"name": "Gast", "color": "slate-500", "priority": 4}
+        joined_date = None
         
         if guild:
             member = guild.get_member(int(uid))
             if member:
+                # Beitrittsdatum formatieren (TT.MM.JJJJ)
+                if member.joined_at:
+                    joined_date = member.joined_at.strftime("%d.%m.%Y")
+                
                 role_ids = [r.id for r in member.roles]
                 if OFFIZIER_ROLLE_ID in role_ids:
                     role_info = {"name": "Offizier", "color": "red-500", "priority": 1}
@@ -49,12 +54,12 @@ async def index():
         enhanced_list.append({
             "uid": uid,
             "chars": user_data.get("chars", []),
-            "role": role_info
+            "role": role_info,
+            "joined_at": joined_date
         })
         total_chars += len(user_data.get("chars", []))
 
-    # --- SORTIERUNG NACH PRIORITÄT ---
-    # 1 = Offizier, 2 = Mitglied, 3 = Bewerber, 4 = Gast
+    # Sortierung: Offizier -> Mitglied -> Bewerber
     enhanced_list.sort(key=lambda x: x['role']['priority'])
 
     stats = {"total_members": len(members_data), "total_chars": total_chars}
@@ -80,8 +85,17 @@ async def index():
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                 {% for user in members_list %}
                 <div class="bg-[#1e293b] rounded-2xl p-6 border border-slate-700 hover:border-indigo-500/50 transition-all shadow-xl relative overflow-hidden">
-                    <div class="absolute top-0 right-0 px-3 py-1 bg-{{ user.role.color }}/20 border-b border-l border-{{ user.role.color }}/30 rounded-bl-lg">
-                        <span class="text-[10px] font-bold text-{{ user.role.color }} uppercase tracking-tighter">{{ user.role.name }}</span>
+                    
+                    <div class="absolute top-0 right-0 flex flex-col items-end">
+                        <div class="px-3 py-1 bg-{{ user.role.color }}/20 border-b border-l border-{{ user.role.color }}/30 rounded-bl-lg">
+                            <span class="text-[10px] font-bold text-{{ user.role.color }} uppercase tracking-tighter">{{ user.role.name }}</span>
+                        </div>
+                        
+                        {% if user.role.name == "Bewerber" and user.joined_at %}
+                        <div class="mr-2 mt-1">
+                            <span class="text-[9px] text-slate-500 font-mono">Seit: {{ user.joined_at }}</span>
+                        </div>
+                        {% endif %}
                     </div>
 
                     <div class="mb-4">
