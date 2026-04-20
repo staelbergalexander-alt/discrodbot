@@ -22,80 +22,65 @@ class Recruitment(commands.Cog):
 # --- MODAL FÜR ABLEHNUNGS-BEGRÜNDUNG ---
 
 class DeclineReasonModal(discord.ui.Modal, title='Bewerbung ablehnen'):
-    reason = discord.ui.TextInput(
-        label='Begründung',
-        style=discord.TextStyle.paragraph,
-        placeholder='Z.B. Gear reicht noch nicht ganz aus...',
-        required=True,
-        max_length=500
-    )
+    reason = discord.ui.TextInput(label='Begründung', style=discord.TextStyle.paragraph, required=True)
 
     def __init__(self, member_id):
         super().__init__()
         self.member_id = member_id
 
     async def on_submit(self, interaction: discord.Interaction):
+        member = interaction.guild.get_member(self.member_id)
+        
+        if member:
+            # Hier werden jetzt die Rollen getauscht
+            g_role = interaction.guild.get_role(GAST_ROLLE_ID)
+            b_role = interaction.guild.get_role(BEWERBER_ROLLE_ID)
+            if g_role: await member.add_roles(g_role)
+            if b_role: await member.remove_roles(b_role)
+
         embed = discord.Embed(
             title="❌ Bewerbung abgelehnt",
-            description=f"**Grund:** {self.reason.value}",
-            color=discord.Color.red(),
-            timestamp=datetime.now()
+            description=f"**Mitglied:** {member.mention if member else 'Unbekannt'}\n**Grund:** {self.reason.value}",
+            color=discord.Color.red()
         )
         await interaction.response.send_message(embed=embed)
         
-        # Thread automatisch archivieren
-        await asyncio.sleep(10)
-        thread = interaction.channel
-        if isinstance(thread, discord.Thread):
-            await thread.edit(archived=True, locked=True)
+        # Thread archivieren
+        await asyncio.sleep(5)
+        if isinstance(interaction.channel, discord.Thread):
+            await interaction.channel.edit(archived=True, locked=True)
 
 # --- VIEWS ---
 
 class ThreadActionView(discord.ui.View):
-    # member_id=None erlaubt das Laden beim Bot-Start ohne Absturz
     def __init__(self, member_id=None):
         super().__init__(timeout=None)
         self.member_id = member_id
 
     @discord.ui.button(label="Annehmen ✅", style=discord.ButtonStyle.success, custom_id="acc_btn")
     async def accept(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # ID-Logik: Nutze self.member_id ODER finde den User in der Nachricht
-        target_id = self.member_id
-        if target_id is None and interaction.message.mentions:
-            target_id = interaction.message.mentions[0].id
-
+        target_id = self.member_id or (interaction.message.mentions[0].id if interaction.message.mentions else None)
+        
         if not target_id:
-            return await interaction.response.send_message("❌ Fehler: Mitglieds-ID nicht gefunden (Neustart-Problem).", ephemeral=True)
+            return await interaction.response.send_message("❌ ID nicht gefunden.", ephemeral=True)
 
         member = interaction.guild.get_member(target_id)
         if member:
-            m_role = interaction.guild.get_role(MITGLIED_ROLLE_ID)
-            b_role = interaction.guild.get_role(BEWERBER_ROLLE_ID)
-            if m_role: await member.add_roles(m_role)
-            if b_role: await member.remove_roles(b_role)
-            await interaction.response.send_message(f"✅ {member.mention} wurde aufgenommen! Post wird archiviert...")
-            
-            await asyncio.sleep(10)
-            thread = interaction.channel
-            if isinstance(thread, discord.Thread):
-                await thread.edit(archived=True, locked=True)
+            await member.add_roles(interaction.guild.get_role(MITGLIED_ROLLE_ID))
+            await member.remove_roles(interaction.guild.get_role(BEWERBER_ROLLE_ID))
+            await interaction.response.send_message(f"✅ {member.mention} wurde aufgenommen!")
+            await asyncio.sleep(5)
+            if isinstance(interaction.channel, discord.Thread):
+                await interaction.channel.edit(archived=True, locked=True)
 
     @discord.ui.button(label="Ablehnen ❌", style=discord.ButtonStyle.danger, custom_id="dec_btn")
     async def decline(self, interaction: discord.Interaction, button: discord.ui.Button):
-        target_id = self.member_id
-        if target_id is None and interaction.message.mentions:
-            target_id = interaction.message.mentions[0].id
-            
+        target_id = self.member_id or (interaction.message.mentions[0].id if interaction.message.mentions else None)
+        
         if not target_id:
-            return await interaction.response.send_message("❌ Fehler: ID nicht gefunden.", ephemeral=True)
+            return await interaction.response.send_message("❌ ID nicht gefunden.", ephemeral=True)
             
-        if member:
-            g_role = interaction.guild.get_role(GAST_ROLLE_ID)
-            b_role = interaction.guild.get_role(BEWERBER_ROLLE_ID)
-            if m_role: await member.add_roles(g_role)
-            if b_role: await member.remove_roles(b_role)
-            await interaction.response.send_message(f"❌ {member.mention} wurde abgelehnt! Post wird archiviert...")
-            
+        # Wir rufen NUR das Modal auf. Die Rollen-Logik wandert ins Modal!
         await interaction.response.send_modal(DeclineReasonModal(target_id))
 
 class SuperQuickModal(discord.ui.Modal, title='Neuer Gilden-Eintrag'):
