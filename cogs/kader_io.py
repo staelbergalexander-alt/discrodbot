@@ -61,26 +61,21 @@ class KaderIO(commands.Cog):
                         members = data.get('members', [])
                         
                         for m in members:
-                            # Filter nach Gilden-Rang
                             if m.get('rank', 10) > self.max_rank: continue
-                            
                             char = m.get('character', {})
-                            # Nur Max-Level Charaktere (Level 80 in TWW)
                             if char.get('level', 0) < 80: continue
                             
                             spec = char.get('active_spec_name')
-                            rio_role = char.get('active_role') # TANK, HEALER, DPS
+                            rio_role = char.get('active_role') 
                             char_class = char.get('class')
 
                             if spec:
                                 role = self.get_detailed_role(spec, char_class)
                                 stats[role] += 1
                             elif rio_role:
-                                # Fallback wenn Spec-Name von API nicht geliefert wird
                                 if rio_role == "TANK": stats["Tank"] += 1
                                 elif rio_role == "HEALER": stats["Heiler"] += 1
                                 else:
-                                    # Bei DPS: Grobe Zuordnung nach Klasse
                                     if char_class in ["Mage", "Warlock", "Hunter"]:
                                         stats["Ranged"] += 1
                                     else:
@@ -98,7 +93,6 @@ class KaderIO(commands.Cog):
             color=0x2b2d31
         )
         
-        # Ziele und Labels (MID, HIGH, MAX, LOW)
         config = {
             "Tank":   {"goal": 2, "emoji": "🛡️", "label": "MID"},
             "Heiler": {"goal": 5, "emoji": "🌿", "label": "HIGH"},
@@ -110,12 +104,9 @@ class KaderIO(commands.Cog):
         for role, data in config.items():
             count = stats[role]
             goal = data["goal"]
-            
-            # Balken generieren (z.B. ███░░)
             filled = min(count, goal)
             empty = max(0, goal - count)
             bar = "█" * filled + "░" * empty
-            
             content += f"{data['emoji']} **{role.upper():<7}** → {bar} `{count}/{goal}` `{data['label']}`\n"
         
         embed.add_field(name="Kader Belegung", value=content, inline=False)
@@ -136,11 +127,13 @@ class KaderIO(commands.Cog):
         except Exception as e:
             print(f"❌ KaderIO Update Fehler: {e}")
 
-    @tasks.loop(hours=1) # Intervall auf 1 Stunde verkürzt für bessere Aktualität
+    @tasks.loop(hours=1)
     async def auto_update(self):
         await self.perform_update()
 
-@app_commands.command(name="kader_setup", description="Erstellt den initialen Kader-Post")
+    # --- HIER WURDE DIE EINRÜCKUNG KORRIGIERT ---
+
+    @app_commands.command(name="kader_setup", description="Erstellt den initialen Kader-Post")
     async def kader_setup(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         stats, err = await self.get_stats_from_raiderio()
@@ -152,12 +145,14 @@ class KaderIO(commands.Cog):
             f"✅ Post erstellt! Speichere diese ID in Railway unter `RECRUITMENT_MSG_ID`: `{msg.id}`"
         )
 
-@app_commands.command(name="kader_update", description="Aktualisiert den Kader-Post sofort")
+    @app_commands.command(name="kader_update", description="Aktualisiert den Kader-Post sofort")
     async def kader_update(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         await self.perform_update()
         await interaction.followup.send("✅ Kader-Anzeige wurde manuell aktualisiert!")
 
-# Diese Funktion muss ganz links am Rand stehen (keine Einrückung!)
+
+# --- DIESE FUNKTION STEHT AUSSERHALB DER KLASSE ---
+
 async def setup(bot):
     await bot.add_cog(KaderIO(bot))
