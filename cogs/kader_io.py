@@ -10,26 +10,29 @@ from datetime import datetime
 class KaderIO(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        # Railway Variablen laden
+        # Variablen aus Railway laden
         self.realm = os.getenv("REALM")
         self.region = "eu"
+        self.server_id = int(os.getenv("SERVER_ID") or 0)
         self.recruitment_msg_id = int(os.getenv("RECRUITMENT_MSG_ID") or 0)
         self.recruitment_channel_id = int(os.getenv("RECRUITMENT_CH_ID") or 0)
-        self.kader_rolle_id = int(os.getenv("MITGLIED_ROLLE_ID") or 0) # Die Rolle, die gescannt wird
+        self.kader_rolle_id = int(os.getenv("MITGLIED_ROLLE_ID") or 0)
         
+        # Startet den automatischen 12-Stunden-Loop
         self.auto_update.start()
 
     def cog_unload(self):
         self.auto_update.cancel()
 
     def clean_name(self, name):
-        """Bereinigt den Discord-Namen (entfernt Emojis/Zusätze wie 'Name | DD')"""
-        # Nimmt nur das erste Wort und entfernt alles, was kein Buchstabe ist
-        first_word = name.split()[0]
+        """Extrahiert den Char-Namen (entfernt Emojis, Rollen-Tags etc.)"""
+        # Trenne bei Sonderzeichen wie |, -, / oder Leerzeichen und nimm das erste Wort
+        first_word = re.split(r'[ \||/|-]', name)[0]
+        # Entferne alles, was kein Buchstabe ist
         return re.sub(r'[^a-zA-ZäöüÄÖÜß]', '', first_word)
 
     def get_role_from_spec(self, spec, char_class):
-        """Ordnet Raider.io Daten einer Rolle zu."""
+        """Ordnet Raider.io Specs den Rollen zu."""
         tanks = ["Blood", "Guardian", "Brewmaster", "Protection", "Vengeance"]
         healers = ["Restoration", "Holy", "Mistweaver", "Preservation", "Discipline", "Prevoker"]
         
@@ -38,49 +41,46 @@ class KaderIO(commands.Cog):
         return "DPS"
 
     async def fetch_char_data(self, session, name):
-        """Holt Daten von Raider.io."""
+        """Fragt Raider.io für einen einzelnen Namen ab."""
         clean_n = self.clean_name(name)
-        url = f"https://raider.io/api/v1/characters/profile?region={self.region}&realm={self.realm}&name={clean_n}&fields=guild"
+        if not clean_n: return None
+        
+        url = f"https://raider.io/api/v1/characters/profile?region={self.region}&realm={self.realm}&name={clean_n}"
         try:
             async with session.get(url, timeout=5) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     spec = data.get('active_spec_name')
-                    char_class = data.get('class')
-                    return self.get_role_from_spec(spec, char_class)
+                    if not spec: return None
+                    return self.get_role_from_spec(spec, data.get('class'))
+                return None
         except:
             return None
 
     async def get_stats_from_discord(self):
-        """Scannt alle Discord-User mit der Kader-Rolle."""
+        """Sammelt alle Mitglieder der Rolle und holt deren IO-Daten."""
         stats = {"Tank": 0, "Heiler": 0, "DPS": 0}
         
-        # Sicherer Weg: Gilde über die ID aus der Config/Umgebungsvariable holen
-        server_id = int(os.getenv("SERVER_ID") or 0)
-        guild = self.bot.get_guild(server_id)
-        
+        guild = self.bot.get_guild(self.server_id)
         if not guild:
-            # Falls der Bot den Server noch nicht im Cache hat, versuchen wir ihn zu laden
             try:
-                guild = await self.bot.fetch_guild(server_id)
+                guild = await self.bot.fetch_guild(self.server_id)
             except:
-                print(f"⚠️ Gilde mit ID {server_id} konnte nicht gefunden werden!")
+                print(f"❌ KaderIO: Server {self.server_id} nicht gefunden.")
                 return stats
         
         role = guild.get_role(self.kader_rolle_id)
         if not role:
-            print(f"⚠️ Rolle mit ID {self.kader_rolle_id} nicht gefunden!")
+            print(f"❌ KaderIO: Rolle {self.kader_rolle_id} nicht gefunden.")
             return stats
 
-        # Liste der Namen von allen, die die Rolle haben
+        # Namen aller Mitglieder mit dieser Rolle (keine Bots)
         member_names = [m.display_name for m in role.members if not m.bot]
         
         if not member_names:
-            print("ℹ️ Keine Mitglieder mit der angegebenen Rolle gefunden.")
             return stats
 
         async with aiohttp.ClientSession() as session:
-            # Wir fragen Raider.io für alle Namen gleichzeitig ab
             tasks_list = [self.fetch_char_data(session, name) for name in member_names]
             results = await asyncio.gather(*tasks_list)
             
@@ -90,31 +90,30 @@ class KaderIO(commands.Cog):
         return stats
 
     def create_embed(self, stats):
-        """Erstellt das Embed mit der Balkengrafik."""
+        """Erzeugt das Embed im Balken-Design."""
         embed = discord.Embed(
-            title="🛡️ Aktueller Gilden-Kader",
-            description="Diese Daten werden live von Raider.io abgefragt basierend auf euren Discord-Namen.",
+            title="⚔️ Aktueller Gilden-Kader Status",
+            description="Die Zahlen basieren auf den aktuellen Raider.io Profilen eurer Discord-Mitglieder.",
             color=0x2b2d31
         )
         
-        # Eure Ziel-Konfiguration (Wie viele braucht ihr?)
-        # Diese Werte bestimmen, wie lang der Balken ist
+        # Deine gewünschte Kader-Größe
         goals = {"Tank": 2, "Heiler": 5, "DPS": 14}
         emojis = {"Tank": "🛡️", "Heiler": "🌿", "DPS": "⚔️"}
         
         content = ""
         for role, count in stats.items():
             max_val = goals[role]
-            # Balken-Logik
             filled = min(count, max_val)
             empty = max(0, max_val - filled)
             bar = "█" * filled + "░" * empty
             
-            prio = "LOW" if count >= max_val else "HIGH"
+            # Priorität anzeigen
+            prio = "FULL" if count >= max_val else "OPEN"
             content += f"{emojis[role]} **{role.upper():<7}** {bar} `{count}/{max_val}`  `[{prio}]`\n"
         
-        embed.add_field(name="Rekrutierungs-Status", value=content, inline=False)
-        embed.set_footer(text=f"Letztes Update: {datetime.now().strftime('%d.%m. %H:%M')}")
+        embed.add_field(name="Rekrutierung", value=content, inline=False)
+        embed.set_footer(text=f"Letzter Scan: {datetime.now().strftime('%d.%m. %H:%M')} Uhr")
         return embed
 
     @tasks.loop(hours=12)
@@ -123,7 +122,7 @@ class KaderIO(commands.Cog):
         await self.perform_update()
 
     async def perform_update(self):
-        """Die eigentliche Update-Logik für Forum/Nachricht."""
+        """Logik zum Aktualisieren der Nachricht."""
         if not self.recruitment_msg_id or not self.recruitment_channel_id:
             return
 
@@ -139,29 +138,30 @@ class KaderIO(commands.Cog):
         except Exception as e:
             print(f"❌ Fehler beim Kader-Update: {e}")
 
-    @app_commands.command(name="kader_update", description="Aktualisiert den Kader-Post im Forum sofort")
+    @app_commands.command(name="kader_update", description="Erzwingt ein sofortiges Update des Kader-Status")
     async def kader_update(self, interaction: discord.Interaction):
-        """Manueller Start per Slash-Command."""
         if not interaction.user.guild_permissions.administrator:
-            return await interaction.response.send_message("Keine Rechte!", ephemeral=True)
+            return await interaction.response.send_message("Nur für Admins!", ephemeral=True)
 
-        await interaction.response.send_message("🔄 Scanne Raider.io Profile... bitte warten.", ephemeral=True)
+        await interaction.response.send_message("🔄 Scanne Raider.io Profile...", ephemeral=True)
         await self.perform_update()
         await interaction.edit_original_response(content="✅ Kader-Status wurde aktualisiert!")
-        
-    @app_commands.command(name="kader_setup", description="Erstellt die initiale Kader-Nachricht")
+
+    @app_commands.command(name="kader_setup", description="Erstellt die Nachricht, die der Bot zukünftig verwaltet")
     async def kader_setup(self, interaction: discord.Interaction):
         if not interaction.user.guild_permissions.administrator:
-            return await interaction.response.send_message("Keine Rechte!", ephemeral=True)
+            return await interaction.response.send_message("Nur für Admins!", ephemeral=True)
             
-        await interaction.response.send_message("Erstelle Kader-Post...", ephemeral=True)
+        await interaction.response.send_message("Erstelle initiale Nachricht...", ephemeral=True)
         stats = await self.get_stats_from_discord()
         embed = self.create_embed(stats)
         
-        # Der Bot sendet eine NEUE Nachricht
+        # Bot sendet neue Nachricht
         msg = await interaction.channel.send(embed=embed)
         
-        await interaction.edit_original_response(content=f"✅ Post erstellt! Kopiere diese ID in Railway unter RECRUITMENT_MSG_ID: `{msg.id}`")
+        await interaction.edit_original_response(
+            content=f"✅ Nachricht erstellt!\nKopiere diese ID in Railway als `RECRUITMENT_MSG_ID`: `{msg.id}`\nDie Channel ID ist: `{interaction.channel_id}`"
+        )
 
 async def setup(bot):
     await bot.add_cog(KaderIO(bot))
