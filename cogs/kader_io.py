@@ -11,7 +11,7 @@ class KaderIO(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.realm = os.getenv("REALM", "blackrock")
-        self.guild_name = os.getenv("How to Interrupt", "How to Interrupt")
+        self.guild_name = os.getenv("GUILD_NAME", "How to Interrupt")
         self.region = "eu"
         self.max_rank = int(os.getenv("MAX_KADER_RANK") or 10)
         
@@ -39,10 +39,8 @@ class KaderIO(commands.Cog):
         return "Ranged" if char_class in ["Mage", "Warlock", "Hunter", "Priest"] else "Melee"
 
     async def get_stats_from_raiderio(self):
-  
-    if m.get('rank', 10) > self.max_rank: continue
         stats = {"Tank": 0, "Heiler": 0, "Melee": 0, "Ranged": 0}
-        members = [] # Fix für UnboundLocalError
+        members = []
         
         safe_name = urllib.parse.quote(self.guild_name)
         safe_realm = urllib.parse.quote(self.realm.lower().replace(" ", "-"))
@@ -54,12 +52,14 @@ class KaderIO(commands.Cog):
                     if resp.status == 200:
                         data = await resp.json()
                         members = data.get('members', [])
+                        
                         for m in members:
                             char = m.get('character', {})
                             # DEBUG PRINT: Zeigt uns in den Railway-Logs, wer gefunden wird
                             print(f"DEBUG: Check {char.get('name')} | Rang: {m.get('rank')} | Lvl: {char.get('level')}")
+                            
+                            # Filter: Nur Ränge bis max_rank und nur Level 70+ (für Cache-Sicherheit)
                             if m.get('rank', 10) > self.max_rank: continue
-                            char = m.get('character', {})
                             if char.get('level', 0) < 90: continue
                             
                             spec = char.get('active_spec_name')
