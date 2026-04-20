@@ -1,54 +1,51 @@
 import discord
 from discord.ext import commands
 import os
-import json
 import asyncio
-# Falls load_dotenv Fehler macht, nutzen wir einen Fallback
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass 
+from dotenv import load_dotenv
 
 # Importiere die Webserver-Funktion aus deiner web_dashboard.py
 from web_dashboard import run_web
 
-# Variablen laden
-TOKEN = os.getenv('DISCORD_TOKEN')
-SERVER_ID = int(os.getenv('SERVER_ID') or 0)
+load_dotenv()
 
-# Bot-Setup
-intents = discord.Intents.default()
-intents.members = True  
-intents.message_content = True
-bot = commands.Bot(command_prefix='/', intents=intents)
+class GildenBot(commands.Bot):
+    def __init__(self):
+        intents = discord.Intents.default()
+        intents.members = True          # Wichtig für Rollen-Zuweisung
+        intents.message_content = True  # Wichtig für Commands (!raidumfrage)
+        
+        super().__init__(
+            command_prefix='!', 
+            intents=intents,
+            help_command=None
+        )
 
-@bot.event
-async def on_ready():
-    print(f'✅ Bot eingeloggt als {bot.user.name}')
+    async def setup_hook(self):
+        """Lädt Cogs und startet den Webserver."""
+        # Liste deiner Cogs (Dateinamen ohne .py)
+        extensions = ['utilities', 'recruitment', 'member_management', 'dashboard', 'logs_archiv']
+        
+        print("--- Lade Cogs ---")
+        for ext in extensions:
+            try:
+                if os.path.exists(f"{ext}.py"):
+                    await self.load_extension(ext)
+                    print(f"✅ Cog geladen: {ext}")
+            except Exception as e:
+                print(f"❌ Fehler bei {ext}: {e}")
+        
+        # Webserver im Hintergrund starten
+        self.loop.create_task(run_web(self))
 
-# --- HIER KOMMT DEIN BESTEHENDER CODE (COMMANDS ETC.) REIN ---
+    async def on_ready(self):
+        print(f'✅ Bot online als {self.user.name}')
 
-# --- DER FIX FÜR DEN START-PROZESS ---
-
-async def start_everything():
-    """Diese Funktion kapselt die async-Aufrufe korrekt ein."""
-    if not TOKEN:
-        print("❌ FEHLER: Kein DISCORD_TOKEN gefunden!")
-        return
-
-    print("🚀 Starte Webserver und Bot...")
-    # Beides gleichzeitig starten
-    await asyncio.gather(
-        run_web(bot),  
-        bot.start(TOKEN)
-    )
+bot = GildenBot()
 
 if __name__ == "__main__":
-    # Das ist der einzige Weg, eine async-Funktion von 'außen' zu starten
-    try:
-        asyncio.run(start_everything())
-    except KeyboardInterrupt:
-        print("Wird beendet...")
-    except Exception as e:
-        print(f"Kritischer Fehler: {e}")
+    token = os.getenv('DISCORD_TOKEN')
+    if token:
+        bot.run(token)
+    else:
+        print("❌ Kein Token gefunden!")
