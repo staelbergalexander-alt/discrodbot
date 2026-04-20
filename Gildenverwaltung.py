@@ -24,7 +24,7 @@ class GildenBot(commands.Bot):
     async def setup_hook(self):
         """Lädt Cogs und startet den Webserver."""
         # Liste deiner Cogs (Dateinamen ohne .py)
-        extensions = ['utilities', 'recruitment', 'member_management', 'dashboard', 'logs_archiv']
+        extensions = ['cogs.utilities', 'cogs.recruitment', 'cogs.member_management', 'cogs.dashboard', 'cogs.logs_archiv']
         
         print("--- Lade Cogs ---")
         for ext in extensions:
