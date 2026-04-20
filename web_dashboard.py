@@ -114,44 +114,79 @@ HTML_TEMPLATE = """
     <style>
         :root { --bg: #0b0c10; --card: #1f2833; --cyan: #66fcf1; --text: #eee; }
         body { font-family: sans-serif; background: var(--bg); color: var(--text); padding: 20px; }
-        .container { max-width: 1000px; margin: auto; }
+        .container { max-width: 1100px; margin: auto; }
         .admin-panel { background: var(--card); padding: 20px; border-radius: 10px; margin-bottom: 20px; border: 1px solid var(--cyan); }
-        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px; }
-        .card { background: var(--card); padding: 15px; border-radius: 10px; border-left: 5px solid #444; position: relative; }
-        .id-badge { font-size: 0.7rem; background: #000; padding: 2px 5px; border-radius: 4px; color: var(--cyan); }
+        
+        /* Container für einen Spieler (Main + Twinks) */
+        .player-group { 
+            background: rgba(255,255,255,0.02); 
+            border-radius: 15px; 
+            padding: 15px; 
+            margin-bottom: 30px; 
+            border: 1px solid #333;
+        }
+        .player-header { border-bottom: 1px solid #444; padding-bottom: 10px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; }
+        .discord-id { font-family: monospace; color: var(--cyan); font-size: 0.8rem; }
+
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px; }
+        
+        /* Main Charakter Karte */
+        .card.main { border-left: 6px solid; transform: scale(1.02); background: #2a343f; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+        /* Twink Karte */
+        .card.twink { border-left: 3px solid; opacity: 0.9; font-size: 0.9rem; }
+        
+        .card { background: var(--card); padding: 15px; border-radius: 10px; position: relative; }
+        .ilvl { position: absolute; top: 10px; right: 10px; color: var(--cyan); font-weight: bold; }
+        .label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; font-weight: bold; padding: 2px 6px; border-radius: 4px; background: rgba(0,0,0,0.3); }
     </style>
 </head>
 <body>
     <div class="container">
-        <header style="display:flex; justify-content: space-between; margin-bottom:20px;">
+        <header style="display:flex; justify-content: space-between; align-items: center; margin-bottom:30px;">
             <h1>🛡️ Gilden Dashboard</h1>
-            {% if is_logged_in %}<p>Hallo {{ user.name }}</p>{% else %}<a href="/login" style="color:var(--cyan);">Login</a>{% endif %}
+            {% if is_logged_in %}<span>Hallo <strong>{{ user.name }}</strong></span>{% else %}<a href="/login" style="color:var(--cyan);">Login</a>{% endif %}
         </header>
 
         {% if is_admin %}
         <div class="admin-panel">
             <form action="/add" method="post">
-                <input type="text" name="rio_link" placeholder="Raider.io Link" required style="width:50%;">
-                <input type="text" name="discord_id" placeholder="User ID (leer = eigene)" style="width:30%;">
-                <button type="submit">OK</button>
+                <input type="text" name="rio_link" placeholder="Raider.io Link" required style="width:40%; padding:10px; border-radius:5px; border:none;">
+                <input type="text" name="discord_id" placeholder="Discord User ID" style="width:30%; padding:10px; border-radius:5px; border:none;">
+                <button type="submit" style="padding:10px 20px; background:var(--cyan); border:none; border-radius:5px; font-weight:bold;">Hinzufügen</button>
             </form>
         </div>
         {% endif %}
 
-        <div class="grid">
-            {% for uid, data in db.items() %}
+        {% for uid, data in db.items() %}
+        <div class="player-group">
+            <div class="player-header">
+                <span>👤 Spieler: <strong>{{ data.discord_name or 'Unbekannt' }}</strong></span>
+                <span class="discord-id">ID: {{ uid }}</span>
+            </div>
+            
+            <div class="grid">
                 {% for char in data.chars %}
-                <div class="card" style="border-left-color: {{ colors.get(char.class, '#444') }}">
-                    <strong style="font-size: 1.2rem;">{{ char.name }}</strong> ({{ char.ilvl }})<br>
-                    <small>{{ char.class }} - {{ char.realm }}</small><br>
-                    <div style="margin-top:10px; font-size:0.8rem; color:#888;">
-                        Besitzer ID: <span class="id-badge">{{ uid }}</span>
-                        {% if is_admin %}<a href="/delete/{{uid}}/{{loop.index0}}" style="color:red; float:right;">Löschen</a>{% endif %}
+                    {% set is_main = loop.first %}
+                    <div class="card {{ 'main' if is_main else 'twink' }}" style="border-left-color: {{ colors.get(char.class, '#444') }}">
+                        <div class="ilvl">{{ char.ilvl }}</div>
+                        <span class="label" style="color: {{ colors.get(char.class, '#fff') }}">
+                            {{ '⭐ MAIN' if is_main else '⚓ TWINK' }}
+                        </span>
+                        <div style="margin-top:10px;">
+                            <strong style="font-size: {{ '1.3rem' if is_main else '1.1rem' }};">{{ char.name }}</strong><br>
+                            <small>{{ char.class }} - {{ char.realm }}</small>
+                        </div>
+                        <div style="margin-top:10px; border-top: 1px solid rgba(255,255,255,0.1); padding-top:10px;">
+                            <a href="{{ char.rio_url }}" target="_blank" style="color:var(--cyan); text-decoration:none; font-size:0.75rem;">Raider.io ↗</a>
+                            {% if is_admin %}
+                                <a href="/delete/{{uid}}/{{loop.index0}}" style="color:#ff4d4d; float:right; text-decoration:none; font-size:0.75rem;" onclick="return confirm('Löschen?')">Entfernen</a>
+                            {% endif %}
+                        </div>
                     </div>
-                </div>
                 {% endfor %}
-            {% endfor %}
+            </div>
         </div>
+        {% endfor %}
     </div>
 </body>
 </html>
