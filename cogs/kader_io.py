@@ -46,12 +46,12 @@ class KaderIO(commands.Cog):
 
     async def get_stats_from_raiderio(self):
         for m in members:
-        char = m.get('character', {})
-        # Diese Zeile in den Logs beobachten:
-        print(f"DEBUG: Prüfe {char.get('name')} | Rang: {m.get('rank')} | Level: {char.get('level')}")
+            char = m.get('character', {})
+            # Diese Zeile in den Logs beobachten:
+            print(f"DEBUG: Prüfe {char.get('name')} | Rang: {m.get('rank')} | Level: {char.get('level')}")
         
-        if m.get('rank', 10) > self.max_rank: continue
-        # ... restlicher code
+            if m.get('rank', 10) > self.max_rank: continue
+            # ... restlicher code
         """Holt die Gildenliste von Raider.io."""
         stats = {"Tank": 0, "Heiler": 0, "Melee": 0, "Ranged": 0}
         
