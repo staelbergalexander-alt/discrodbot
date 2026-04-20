@@ -3,3 +3,4 @@ pytz
 quart
 quart-discord
 aiohttp
+python-dotenv
