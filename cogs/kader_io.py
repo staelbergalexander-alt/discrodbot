@@ -122,8 +122,10 @@ class KaderIO(commands.Cog):
         await self.perform_update()
 
     async def perform_update(self):
-        """Logik zum Aktualisieren der Nachricht."""
-        if not self.recruitment_msg_id or not self.recruitment_channel_id:
+        """Logik zum Aktualisieren der Nachricht mit Fehlerschutz."""
+        # 1. Check: Sind die IDs überhaupt gesetzt?
+        if self.recruitment_msg_id <= 0 or self.recruitment_channel_id <= 0:
+            print("ℹ️ KaderIO: Warte auf Setup. IDs sind noch auf 0.")
             return
 
         try:
@@ -131,13 +133,22 @@ class KaderIO(commands.Cog):
             if not channel:
                 channel = await self.bot.fetch_channel(self.recruitment_channel_id)
             
-            msg = await channel.fetch_message(self.recruitment_msg_id)
+            # 2. Check: Existiert die Nachricht?
+            try:
+                msg = await channel.fetch_message(self.recruitment_msg_id)
+            except discord.NotFound:
+                print(f"⚠️ KaderIO: Nachricht {self.recruitment_msg_id} nicht gefunden. Bitte /kader_setup nutzen.")
+                return
+
+            # 3. Stats holen und Nachricht bearbeiten
             stats = await self.get_stats_from_discord()
             await msg.edit(embed=self.create_embed(stats))
             print("✅ Kader-Post erfolgreich aktualisiert.")
+            
         except Exception as e:
+            # Verhindert, dass der Bot bei Fehlern komplett stoppt
             print(f"❌ Fehler beim Kader-Update: {e}")
-
+            
     @app_commands.command(name="kader_update", description="Erzwingt ein sofortiges Update des Kader-Status")
     async def kader_update(self, interaction: discord.Interaction):
         if not interaction.user.guild_permissions.administrator:
