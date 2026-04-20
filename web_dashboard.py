@@ -146,6 +146,9 @@ async def index():
 async def run_web():
     # Railway nutzt die PORT Umgebungsvariable
     port = int(os.getenv("PORT", 5000))
-    # Wir nutzen app.run_task für asynchronen Betrieb innerhalb von asyncio.gather
-    from quart import asyncio
+    
+    # FIX: Wir nutzen direkt das Standard-asyncio von Python
+    import asyncio
+    
+    # Wir erstellen eine Task für den Quart-Server
     await app.run_task(host="0.0.0.0", port=port)
