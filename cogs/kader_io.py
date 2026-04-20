@@ -148,6 +148,20 @@ class KaderIO(commands.Cog):
         await interaction.response.send_message("🔄 Scanne Raider.io Profile... bitte warten.", ephemeral=True)
         await self.perform_update()
         await interaction.edit_original_response(content="✅ Kader-Status wurde aktualisiert!")
+        
+    @app_commands.command(name="kader_setup", description="Erstellt die initiale Kader-Nachricht")
+    async def kader_setup(self, interaction: discord.Interaction):
+        if not interaction.user.guild_permissions.administrator:
+            return await interaction.response.send_message("Keine Rechte!", ephemeral=True)
+            
+        await interaction.response.send_message("Erstelle Kader-Post...", ephemeral=True)
+        stats = await self.get_stats_from_discord()
+        embed = self.create_embed(stats)
+        
+        # Der Bot sendet eine NEUE Nachricht
+        msg = await interaction.channel.send(embed=embed)
+        
+        await interaction.edit_original_response(content=f"✅ Post erstellt! Kopiere diese ID in Railway unter RECRUITMENT_MSG_ID: `{msg.id}`")
 
 async def setup(bot):
     await bot.add_cog(KaderIO(bot))
