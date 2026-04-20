@@ -10,7 +10,7 @@ class LogsArchiver(commands.Cog):
         self.bot = bot
         # Variablen aus Railway laden [cite: 1]
         self.wcl_api_key = os.getenv("WCL_API_KEY")
-        self.guild_name = os.getenv("GUILD_NAME")
+        self.guild_name = os.getenv("How to Interrupt")
         self.realm = os.getenv("REALM")
         self.region = "EU"
         self.archive_channel_id = int(os.getenv("LOGS_CHANNEL_ID") or 0)
