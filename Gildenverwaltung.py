@@ -29,7 +29,8 @@ class GildenBot(commands.Bot):
             'cogs.utilities', 
             'cogs.recruitment', 
             'cogs.member_management', 
-            'cogs.dashboard', 
+            'cogs.dashboard',
+            'cogs.kader_io',
             'cogs.logs_archiv'
         ]
         
