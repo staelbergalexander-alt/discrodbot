@@ -41,6 +41,12 @@ class GildenBot(commands.Bot):
     async def on_ready(self):
         print(f'✅ Bot online als {self.user.name}')
 
+@bot.command()
+@commands.is_owner()
+async def sync(ctx):
+    await bot.tree.sync()
+    await ctx.send("Slash-Commands synchronisiert!")
+    
 bot = GildenBot()
 
 if __name__ == "__main__":
