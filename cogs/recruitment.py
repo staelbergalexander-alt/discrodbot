@@ -1,6 +1,5 @@
 import discord
 from discord.ext import commands
-from discord import app_commands
 import os
 import json
 import re
@@ -8,16 +7,6 @@ import asyncio
 import aiohttp
 from datetime import datetime
 from config import OFFIZIER_ROLLE_ID, FORUM_CHANNEL_ID, MITGLIED_ROLLE_ID, BEWERBER_ROLLE_ID, DB_FILE, GAST_ROLLE_ID
-
-class Recruitment(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
-
-    @commands.command()
-    async def setup(self, ctx):
-        if any(r.id == OFFIZIER_ROLLE_ID for r in ctx.author.roles):
-            view = GildenLeitungView(self)
-            await ctx.send("### 🏰 Gildenverwaltung", view=view)
 
 # --- MODAL FÜR ABLEHNUNGS-BEGRÜNDUNG ---
 
@@ -32,7 +21,6 @@ class DeclineReasonModal(discord.ui.Modal, title='Bewerbung ablehnen'):
         member = interaction.guild.get_member(self.member_id)
         
         if member:
-            # Hier werden jetzt die Rollen getauscht
             g_role = interaction.guild.get_role(GAST_ROLLE_ID)
             b_role = interaction.guild.get_role(BEWERBER_ROLLE_ID)
             if g_role: await member.add_roles(g_role)
@@ -45,20 +33,20 @@ class DeclineReasonModal(discord.ui.Modal, title='Bewerbung ablehnen'):
         )
         await interaction.response.send_message(embed=embed)
         
-        # Thread archivieren
-        await asyncio.sleep(5)
         if isinstance(interaction.channel, discord.Thread):
+            await asyncio.sleep(5)
             await interaction.channel.edit(archived=True, locked=True)
 
 # --- VIEWS ---
 
 class ThreadActionView(discord.ui.View):
     def __init__(self, member_id=None):
-        super().__init__(timeout=None)
+        super().__init__(timeout=None) # Wichtig für Persistenz
         self.member_id = member_id
 
     @discord.ui.button(label="Annehmen ✅", style=discord.ButtonStyle.success, custom_id="acc_btn")
     async def accept(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Fallback: Wenn member_id None ist (nach Neustart), nimm die Erwähnung aus der Nachricht
         target_id = self.member_id or (interaction.message.mentions[0].id if interaction.message.mentions else None)
         
         if not target_id:
@@ -69,19 +57,31 @@ class ThreadActionView(discord.ui.View):
             await member.add_roles(interaction.guild.get_role(MITGLIED_ROLLE_ID))
             await member.remove_roles(interaction.guild.get_role(BEWERBER_ROLLE_ID))
             await interaction.response.send_message(f"✅ {member.mention} wurde aufgenommen!")
-            await asyncio.sleep(5)
+            
             if isinstance(interaction.channel, discord.Thread):
+                await asyncio.sleep(5)
                 await interaction.channel.edit(archived=True, locked=True)
 
     @discord.ui.button(label="Ablehnen ❌", style=discord.ButtonStyle.danger, custom_id="dec_btn")
     async def decline(self, interaction: discord.Interaction, button: discord.ui.Button):
         target_id = self.member_id or (interaction.message.mentions[0].id if interaction.message.mentions else None)
-        
         if not target_id:
             return await interaction.response.send_message("❌ ID nicht gefunden.", ephemeral=True)
             
-        # Wir rufen NUR das Modal auf. Die Rollen-Logik wandert ins Modal!
         await interaction.response.send_modal(DeclineReasonModal(target_id))
+
+class GildenLeitungView(discord.ui.View):
+    def __init__(self, cog=None):
+        super().__init__(timeout=None)
+        self.cog = cog
+
+    @discord.ui.button(label="Mitglied eintragen", style=discord.ButtonStyle.green, custom_id="add_mem_btn")
+    async def add(self, interaction, button):
+        # Falls die View nach Neustart global registriert wurde, brauchen wir das Cog-Objekt
+        from recruitment import SuperQuickModal # Lokaler Import gegen Zirkelbezug
+        await interaction.response.send_modal(SuperQuickModal(self.cog))
+
+# --- MODAL FÜR EINTRAG ---
 
 class SuperQuickModal(discord.ui.Modal, title='Neuer Gilden-Eintrag'):
     rio_link = discord.ui.TextInput(label='Raider.io Link', placeholder='Link einfügen...', required=True)
@@ -122,24 +122,28 @@ class SuperQuickModal(discord.ui.Modal, title='Neuer Gilden-Eintrag'):
                 if b_role: await member.add_roles(b_role)
                 if g_role: await member.remove_roles(g_role)
                 
+                # DB Laden mit Fehlerprüfung
+                if not os.path.exists(DB_FILE):
+                    with open(DB_FILE, "w") as f: json.dump({}, f)
                 with open(DB_FILE, "r") as f: db_data = json.load(f)
+                
                 db_data[str(member.id)] = {"chars": [{"name": name, "realm": srv}]}
                 with open(DB_FILE, "w") as f: json.dump(db_data, f, indent=4)
                 
                 forum = interaction.guild.get_channel(FORUM_CHANNEL_ID)
                 if forum:
                     embed = discord.Embed(title=f"🛡️ Neuer Eintrag: {name}", color=discord.Color.blue(), timestamp=datetime.now())
-                    embed.add_field(name="Datum", value=datetime.now().strftime("%d.%m.%Y"), inline=True)
-                    embed.add_field(name="Erstellt von", value=interaction.user.display_name, inline=True)
                     embed.add_field(name="Klasse", value=char_class, inline=True)
                     embed.add_field(name="Spieler", value=self.real_name.value, inline=True)
                     embed.add_field(name="Links", value=f"[Raider.io]({self.rio_link.value}) | [WarcraftLogs]({wcl_link})", inline=False)
 
-                    thread_data = await forum.create_thread(name=f"{name} | {self.real_name.value}", embed=embed)
-                    # Hier wird die member_id fest vergeben für die aktuelle Sitzung
+                    thread_data = await forum.create_thread(name=f"{name} | {self.real_name.value}"[:100], embed=embed)
+                    # Member mentionen für den Fallback der View (ID aus Mentions ziehen)
                     await thread_data.thread.send(content=f"💡 Entscheidung für {member.mention}:", view=ThreadActionView(member.id))
                 
-                await member.edit(nick=f"{name} | {self.real_name.value}")
+                # Fix für 400 Bad Request (Nickname zu lang)
+                new_nick = f"{name} | {self.real_name.value}"[:32]
+                await member.edit(nick=new_nick)
             
             await prompt.delete()
             await msg.delete()
@@ -147,14 +151,20 @@ class SuperQuickModal(discord.ui.Modal, title='Neuer Gilden-Eintrag'):
         except Exception as e:
             print(f"Fehler: {e}")
 
-class GildenLeitungView(discord.ui.View):
-    def __init__(self, cog):
-        super().__init__(timeout=None)
-        self.cog = cog
+class Recruitment(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
 
-    @discord.ui.button(label="Mitglied eintragen", style=discord.ButtonStyle.green, custom_id="add_mem_btn")
-    async def add(self, interaction, button):
-        await interaction.response.send_modal(SuperQuickModal(self.cog))
+    @commands.command()
+    async def setup(self, ctx):
+        if any(r.id == OFFIZIER_ROLLE_ID for r in ctx.author.roles):
+            view = GildenLeitungView(self)
+            await ctx.send("### 🏰 Gildenverwaltung", view=view)
 
 async def setup(bot):
-    await bot.add_cog(Recruitment(bot))
+    cog = Recruitment(bot)
+    await bot.add_cog(cog)
+    
+    # --- DAS IST DAS WICHTIGSTE FÜR DEN NEUSTART ---
+    bot.add_view(ThreadActionView())
+    bot.add_view(GildenLeitungView(cog))
