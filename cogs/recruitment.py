@@ -79,13 +79,14 @@ class ThreadActionView(discord.ui.View):
             if m_role: await member.add_roles(m_role)
             if b_role: await member.remove_roles(b_role)
             
-            await interaction.response.send_message(f"✅ {member.mention} wurde aufgenommen! Archivierung folgt...")
+            await interaction.response.send_message(f"✅ {member.mention} wurde aufgenommen! Dieser Thread wird in 5 Sekunden gelöscht...")
             
+            await asyncio.sleep(5)
             if isinstance(interaction.channel, discord.Thread):
-                await asyncio.sleep(10)
-                await interaction.channel.edit(archived=True, locked=True)
-        else:
-            await interaction.response.send_message("❌ Mitglied nicht auf dem Server gefunden.", ephemeral=True)
+                await interaction.channel.delete()
+            else:
+                # Falls es kein Thread ist, zur Sicherheit nur eine Warnung (oder auch löschen)
+                print("Warnung: Der Kanal ist kein Thread und wurde nicht gelöscht.")
 
     @discord.ui.button(label="Ablehnen ❌", style=discord.ButtonStyle.danger, custom_id="dec_btn")
     async def decline(self, interaction: discord.Interaction, button: discord.ui.Button):
