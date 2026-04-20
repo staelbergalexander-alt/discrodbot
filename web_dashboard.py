@@ -1,6 +1,6 @@
 import os
 import json
-from quart import Quart, render_template_string
+from quart import Quart, render_template_string, redirect, url_for
 
 app = Quart(__name__)
 
@@ -21,7 +21,7 @@ async def index():
         except Exception as e:
             print(f"Fehler beim Laden der JSON: {e}")
 
-    # 2. Statistiken für den Header berechnen
+    # 2. Statistiken berechnen
     total_chars = 0
     if isinstance(members_data, dict):
         for user in members_data.values():
@@ -33,7 +33,7 @@ async def index():
         "total_chars": total_chars
     }
 
-    # 3. Dein exaktes HTML-Design als Template
+    # 3. Dein HTML-Design mit eingebautem Lösch-Link
     html_template = """
     <!DOCTYPE html>
     <html lang="de">
@@ -86,11 +86,20 @@ async def index():
                                     <a href="{{ char.rio_url }}" target="_blank" class="text-xs text-orange-400 hover:text-orange-300 flex items-center gap-1">
                                         🔗 Raider.io
                                     </a>
-                                    {% if loop.first %}
-                                        <span class="text-[9px] bg-indigo-600 text-white px-2 py-0.5 rounded-full font-bold">MAIN</span>
-                                    {% else %}
-                                        <span class="text-[9px] bg-slate-700 text-slate-400 px-2 py-0.5 rounded-full">TWINK</span>
-                                    {% endif %}
+                                    
+                                    <div class="flex gap-2 items-center">
+                                        {% if loop.first %}
+                                            <span class="text-[9px] bg-indigo-600 text-white px-2 py-0.5 rounded-full font-bold">MAIN</span>
+                                        {% else %}
+                                            <span class="text-[9px] bg-slate-700 text-slate-400 px-2 py-0.5 rounded-full">TWINK</span>
+                                        {% endif %}
+                                        
+                                        <a href="/delete/{{ uid }}/{{ loop.index0 }}" 
+                                           onclick="return confirm('Soll {{ char.name }} wirklich gelöscht werden?')"
+                                           class="text-[10px] text-red-500 hover:text-white hover:bg-red-600 px-2 py-0.5 rounded border border-red-500/30 transition-all">
+                                           🗑️
+                                        </a>
+                                    </div>
                                 </div>
                             </div>
                             {% endfor %}
@@ -106,15 +115,40 @@ async def index():
     </body>
     </html>
     """
-    
     return await render_template_string(html_template, members=members_data, stats=stats)
 
-# Funktion für den Bot-Start (Gildenverwaltung.py)
+# --- NEU: ROUTE ZUM LÖSCHEN ---
+@app.route('/delete/<uid>/<int:char_idx>')
+async def delete_char(uid, char_idx):
+    if os.path.exists(DB_FILE):
+        try:
+            with open(DB_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            
+            if uid in data and "chars" in data[uid]:
+                # Charakter an Position char_idx entfernen
+                data[uid]["chars"].pop(char_idx)
+                
+                # Wenn Liste leer ist, ganzen User löschen
+                if not data[uid]["chars"]:
+                    del data[uid]
+                
+                # Speichern
+                with open(DB_FILE, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=4, ensure_ascii=False)
+                    
+        except Exception as e:
+            print(f"Fehler beim Löschen: {e}")
+
+    return redirect(url_for('index'))
+
+# Start-Funktion für Gildenverwaltung.py
 async def run_web():
     from hypercorn.asyncio import serve
     from hypercorn.config import Config
     
     config = Config()
+    # Port 5000 oder Railway Port
     config.bind = [f"0.0.0.0:{os.environ.get('PORT', 5000)}"]
     await serve(app, config)
 
