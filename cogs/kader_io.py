@@ -55,10 +55,19 @@ class KaderIO(commands.Cog):
         """Scannt alle Discord-User mit der Kader-Rolle."""
         stats = {"Tank": 0, "Heiler": 0, "DPS": 0}
         
-        # Finde die Gilde und die Rolle
-        guild = self.bot.guilds[0] # Nimmt die erste Gilde, in der der Bot ist
-        role = guild.get_role(self.kader_rolle_id)
+        # Sicherer Weg: Gilde über die ID aus der Config/Umgebungsvariable holen
+        server_id = int(os.getenv("SERVER_ID") or 0)
+        guild = self.bot.get_guild(server_id)
         
+        if not guild:
+            # Falls der Bot den Server noch nicht im Cache hat, versuchen wir ihn zu laden
+            try:
+                guild = await self.bot.fetch_guild(server_id)
+            except:
+                print(f"⚠️ Gilde mit ID {server_id} konnte nicht gefunden werden!")
+                return stats
+        
+        role = guild.get_role(self.kader_rolle_id)
         if not role:
             print(f"⚠️ Rolle mit ID {self.kader_rolle_id} nicht gefunden!")
             return stats
@@ -66,6 +75,10 @@ class KaderIO(commands.Cog):
         # Liste der Namen von allen, die die Rolle haben
         member_names = [m.display_name for m in role.members if not m.bot]
         
+        if not member_names:
+            print("ℹ️ Keine Mitglieder mit der angegebenen Rolle gefunden.")
+            return stats
+
         async with aiohttp.ClientSession() as session:
             # Wir fragen Raider.io für alle Namen gleichzeitig ab
             tasks_list = [self.fetch_char_data(session, name) for name in member_names]
