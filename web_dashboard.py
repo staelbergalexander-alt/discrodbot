@@ -5,6 +5,10 @@ from quart_discord import DiscordOAuth2Session, requires_authorization, Unauthor
 
 app = Quart(__name__)
 
+# --- FIX FÜR DEN INTERNAL SERVER ERROR (HTTPS/HTTP) ---
+# Diese Zeile erlaubt OAuth2 über die interne Railway-Verbindung
+os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
+
 # Railway Variablen
 app.secret_key = os.getenv("SECRET_KEY", "super-geheim")
 app.config["DISCORD_CLIENT_ID"] = os.getenv("DISCORD_CLIENT_ID")
@@ -31,6 +35,8 @@ def load_db():
     return {}
 
 def save_db(data):
+    # Verzeichnis erstellen, falls es nicht existiert
+    os.makedirs(os.path.dirname(DB_FILE), exist_ok=True)
     with open(DB_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
@@ -40,7 +46,10 @@ async def login():
 
 @app.route("/callback")
 async def callback():
-    await discord_auth.callback()
+    try:
+        await discord_auth.callback()
+    except Exception as e:
+        print(f"Callback Fehler: {e}")
     return redirect(url_for("index"))
 
 @app.route("/")
@@ -50,12 +59,14 @@ async def index():
     is_admin = False
     
     if is_logged_in:
-        user = await discord_auth.fetch_user()
-        # Admin-Check: Hat der User die Offizier-Rolle?
-        # (Wir prüfen hier vereinfacht über eine Liste von IDs oder Rollen)
-        # Für den Anfang: Du als Ersteller bist immer Admin
-        if str(user.id) == "DEINE_DISCORD_ID_HIER": # Setze hier deine ID ein
-            is_admin = True
+        try:
+            user = await discord_auth.fetch_user()
+            # HIER DEINE DISCORD ID EINTRAGEN
+            if str(user.id) == "1159119755253383188": 
+                is_admin = True
+        except Exception as e:
+            print(f"Fehler beim User-Abruf: {e}")
+            is_logged_in = False
 
     db = load_db()
     return await render_template_string(HTML_TEMPLATE, db=db, colors=CLASS_COLORS, user=user, is_logged_in=is_logged_in, is_admin=is_admin)
@@ -64,7 +75,11 @@ async def index():
 @requires_authorization
 async def add_char():
     user = await discord_auth.fetch_user()
-    # Hier Prüfung einbauen, ob User Admin/Offizier ist
+    
+    # Optional: Hier nochmals prüfen ob Admin, bevor gespeichert wird
+    if str(user.id) != "DEINE_DISCORD_ID_HIER":
+        return "Keine Berechtigung", 403
+
     form = await request.form
     db = load_db()
     uid = str(user.id)
@@ -92,10 +107,11 @@ HTML_TEMPLATE = """
         .btn-add { background: #3ba55c; color: white; }
         .admin-section { background: #2f3136; padding: 20px; border-radius: 10px; margin-bottom: 30px; }
         input, select { padding: 10px; background: #40444b; border: 1px solid #222; color: white; border-radius: 5px; margin-right: 10px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px; }
     </style>
 </head>
 <body>
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px;">
+    <div class="header">
         <h1>🛡️ Gilden-Verwaltung</h1>
         {% if not is_logged_in %}
             <a href="/login" class="btn btn-login">Mit Discord einloggen</a>
