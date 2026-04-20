@@ -1,19 +1,18 @@
 import os
 import json
+import discord
 from quart import Quart, render_template_string, redirect, url_for
 
 app = Quart(__name__)
 
-# Pfade und IDs
+# Pfade & IDs (aus Railway oder lokal)
 DB_FILE = "/app/data/mitglieder_db.json" if os.path.exists("/app/data/") else "data/mitglieder_db.json"
-
-# Wir importieren die IDs aus deiner Config für den Abgleich
+SERVER_ID = int(os.getenv('SERVER_ID') or 0)
 OFFIZIER_ROLLE_ID = int(os.getenv('OFFIZIER_ROLLE_ID') or 0)
 MITGLIED_ROLLE_ID = int(os.getenv('MITGLIED_ROLLE_ID') or 0)
 BEWERBER_ROLLE_ID = int(os.getenv('BEWERBER_ROLLE_ID') or 0)
-SERVER_ID = int(os.getenv('SERVER_ID') or 0)
 
-# Globaler Speicher für den Bot-Zugriff
+# Globaler Bot-Speicher
 bot_instance = None
 
 @app.route('/')
@@ -28,22 +27,17 @@ async def index():
         except Exception as e:
             print(f"Fehler beim Laden: {e}")
 
-    # Rollen-Informationen für jeden User abrufen
     enhanced_members = {}
     total_chars = 0
-    
-    # Zugriff auf den Bot, um Rollen live zu prüfen
-    guild = None
-    if bot_instance:
-        guild = bot_instance.get_guild(SERVER_ID)
+    guild = bot_instance.get_guild(SERVER_ID) if bot_instance else None
 
     for uid, user_data in members_data.items():
-        role_info = {"name": "Gast", "color": "slate-500"} # Default
+        # Standard-Rolle falls nicht gefunden
+        role_info = {"name": "Gast", "color": "slate-500"}
         
         if guild:
             member = guild.get_member(int(uid))
             if member:
-                # Prüfen welche Rolle der User hat
                 role_ids = [r.id for r in member.roles]
                 if OFFIZIER_ROLLE_ID in role_ids:
                     role_info = {"name": "Offizier", "color": "red-500"}
@@ -69,45 +63,38 @@ async def index():
         <title>Gilden Dashboard</title>
     </head>
     <body class="bg-[#0f172a] text-slate-200 min-h-screen font-sans">
-        
         <header class="p-8 bg-[#1e293b] border-b border-indigo-500/50 shadow-2xl mb-10 text-center">
             <h1 class="text-4xl font-black text-indigo-400 tracking-tighter italic">🛡️ GILDEN DASHBOARD</h1>
             <div class="flex justify-center gap-4 mt-4">
-                <span class="bg-indigo-500/20 text-indigo-300 px-4 py-1 rounded-full text-sm border border-indigo-500/30">
-                    👤 Spieler: {{ stats.total_members }}
-                </span>
-                <span class="bg-emerald-500/20 text-emerald-300 px-4 py-1 rounded-full text-sm border border-emerald-500/30">
-                    ⚔️ Charaktere: {{ stats.total_chars }}
-                </span>
+                <span class="bg-indigo-500/20 text-indigo-300 px-4 py-1 rounded-full text-sm border border-indigo-500/30">👤 Spieler: {{ stats.total_members }}</span>
+                <span class="bg-emerald-500/20 text-emerald-300 px-4 py-1 rounded-full text-sm border border-emerald-500/30">⚔️ Charaktere: {{ stats.total_chars }}</span>
             </div>
         </header>
 
         <div class="container mx-auto px-4 pb-20">
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                
-                {% for uid, user_data in members.items() %}
+                {% for uid, data in members.items() %}
                 <div class="bg-[#1e293b] rounded-2xl p-6 border border-slate-700 hover:border-indigo-500/50 transition-all shadow-xl relative overflow-hidden">
                     
-                    <div class="absolute top-0 right-0 px-4 py-1 bg-{{ user_data.role.color }}/20 border-b border-l border-{{ user_data.role.color }}/30 rounded-bl-xl">
-                        <span class="text-[10px] font-bold text-{{ user_data.role.color }} uppercase tracking-widest">
-                            {{ user_data.role.name }}
-                        </span>
+                    <div class="absolute top-0 right-0 px-3 py-1 bg-{{ data.role.color }}/20 border-b border-l border-{{ data.role.color }}/30 rounded-bl-lg">
+                        <span class="text-[10px] font-bold text-{{ data.role.color }} uppercase tracking-tighter">{{ data.role.name }}</span>
                     </div>
 
-                    <div class="flex justify-between items-center mb-4">
-                        <h2 class="text-slate-400 text-xs font-mono">ID: ...{{ uid[-6:] }}</h2>
+                    <div class="mb-4">
+                        <h2 class="text-slate-400 text-[10px] font-mono opacity-50">UID: ...{{ uid[-6:] }}</h2>
                     </div>
 
                     <div class="space-y-4">
-                        {% for char in user_data.chars %}
+                        {% for char in data.chars %}
                         <div class="bg-[#0f172a]/50 p-4 rounded-xl border-l-4 border-indigo-500 shadow-inner">
                             <div class="flex justify-between items-start">
                                 <div>
                                     <h3 class="text-xl font-bold text-white leading-tight">{{ char.name }}</h3>
                                     <p class="text-sm text-indigo-400 font-medium">{{ char.class }}</p>
+                                    <p class="text-[10px] text-slate-500 uppercase">{{ char.realm }}</p>
                                 </div>
                                 <div class="bg-indigo-500/10 border border-indigo-500/50 text-indigo-300 px-3 py-1 rounded-lg text-center">
-                                    <span class="text-xs block text-slate-500 uppercase font-bold text-[8px]">iLvl</span>
+                                    <span class="text-[8px] block text-slate-500 uppercase font-bold">iLvl</span>
                                     <span class="font-mono font-bold">{{ char.ilvl }}</span>
                                 </div>
                             </div>
@@ -118,7 +105,7 @@ async def index():
                                     {% if loop.first %}
                                         <span class="text-[9px] bg-indigo-600 text-white px-2 py-0.5 rounded-full font-bold">MAIN</span>
                                     {% endif %}
-                                    <a href="/delete/{{ uid }}/{{ loop.index0 }}" onclick="return confirm('Löschen?')" class="text-red-500 hover:text-white transition-all text-xs">🗑️</a>
+                                    <a href="/delete/{{ uid }}/{{ loop.index0 }}" onclick="return confirm('Löschen?')" class="text-slate-600 hover:text-red-500 transition-colors">🗑️</a>
                                 </div>
                             </div>
                         </div>
@@ -126,7 +113,6 @@ async def index():
                     </div>
                 </div>
                 {% endfor %}
-
             </div>
         </div>
     </body>
@@ -145,13 +131,12 @@ async def delete_char(uid, char_idx):
                 if not data[uid]["chars"]: del data[uid]
                 with open(DB_FILE, "w", encoding="utf-8") as f:
                     json.dump(data, f, indent=4, ensure_ascii=False)
-        except Exception as e:
-            print(f"Löschfehler: {e}")
+        except Exception as e: print(f"Löschfehler: {e}")
     return redirect(url_for('index'))
 
 async def run_web(bot=None):
     global bot_instance
-    bot_instance = bot # Speichert den Bot, um Rollen abfragen zu können
+    bot_instance = bot
     from hypercorn.asyncio import serve
     from hypercorn.config import Config
     config = Config()
