@@ -13,7 +13,7 @@ class GildenBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
         intents.members = True          # Wichtig für Rollen-Zuweisung
-        intents.message_content = True  # Wichtig für Commands (!raidumfrage)
+        intents.message_content = True  # Wichtig für Commands
         
         super().__init__(
             command_prefix='!', 
@@ -24,31 +24,46 @@ class GildenBot(commands.Bot):
     async def setup_hook(self):
         """Lädt Cogs und startet den Webserver."""
         # Liste deiner Cogs (Dateinamen ohne .py)
-        extensions = ['cogs.utilities', 'cogs.recruitment', 'cogs.member_management', 'cogs.dashboard', 'cogs.logs_archiv']
+        # Wenn die Dateien im Ordner "cogs" liegen, ist der Punkt-Pfad richtig
+        extensions = [
+            'cogs.utilities', 
+            'cogs.recruitment', 
+            'cogs.member_management', 
+            'cogs.dashboard', 
+            'cogs.logs_archiv'
+        ]
         
         print("--- Lade Cogs ---")
         for ext in extensions:
             try:
-                if os.path.exists(f"{ext}.py"):
-                    await self.load_extension(ext)
-                    print(f"✅ Cog geladen: {ext}")
+                # Wir laden die Extension direkt. 
+                # Falls sie nicht existiert, fängt der except-Block den Fehler ab.
+                await self.load_extension(ext)
+                print(f"✅ Cog geladen: {ext}")
             except Exception as e:
                 print(f"❌ Fehler bei {ext}: {e}")
         
         # Webserver im Hintergrund starten
-        self.loop.create_task(run_web(self))
+        if bot_instance := self:
+            self.loop.create_task(run_web(bot_instance))
 
     async def on_ready(self):
         print(f'✅ Bot online als {self.user.name}')
 
+# --- Bot Instanz erstellen ---
+bot = GildenBot()
+
+# --- Sync Command (jetzt nach der Erstellung von 'bot') ---
 @bot.command()
 @commands.is_owner()
 async def sync(ctx):
-    await bot.tree.sync()
-    await ctx.send("Slash-Commands synchronisiert!")
-    
-bot = GildenBot()
+    try:
+        fmt = await bot.tree.sync()
+        await ctx.send(f"✅ {len(fmt)} Slash-Commands synchronisiert!")
+    except Exception as e:
+        await ctx.send(f"❌ Fehler beim Sync: {e}")
 
+# --- Start Prozess ---
 if __name__ == "__main__":
     token = os.getenv('DISCORD_TOKEN')
     if token:

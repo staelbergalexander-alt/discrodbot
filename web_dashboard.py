@@ -51,12 +51,12 @@ async def fetch_char_data(name, realm):
 # --- DISCORD INTERAKTION (BUTTONS) ---
 
 class ActionButtons(discord.ui.View):
-    def __init__(self, applicant_id, char_name):
-        super().__init__(timeout=None)
-        self.applicant_id = int(applicant_id)
+    def __init__(self, applicant_id=None, char_name=None):
+        super().__init__(timeout=None) # WICHTIG für dauerhafte Buttons
+        self.applicant_id = applicant_id
         self.char_name = char_name
 
-    @discord.ui.button(label="Annehmen", style=discord.ButtonStyle.green, emoji="✅")
+    @discord.ui.button(label="Annehmen", style=discord.ButtonStyle.green, custom_id="btn_accept", emoji="✅")
     async def accept(self, interaction: discord.Interaction, button: discord.ui.Button):
         guild = interaction.guild
         member = guild.get_member(self.applicant_id)
@@ -71,7 +71,7 @@ class ActionButtons(discord.ui.View):
             except Exception as e: await interaction.response.send_message(f"Fehler: {e}", ephemeral=True)
         else: await interaction.response.send_message("User nicht gefunden.", ephemeral=True)
 
-    @discord.ui.button(label="Ablehnen", style=discord.ButtonStyle.red, emoji="❌")
+    @discord.ui.button(label="Ablehnen", style=discord.ButtonStyle.red, custom_id="btn_decline", emoji="❌")
     async def decline(self, interaction: discord.Interaction, button: discord.ui.Button):
         guild = interaction.guild
         member = guild.get_member(self.applicant_id)
