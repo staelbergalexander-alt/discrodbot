@@ -39,6 +39,8 @@ class KaderIO(commands.Cog):
         return "Ranged" if char_class in ["Mage", "Warlock", "Hunter", "Priest"] else "Melee"
 
     async def get_stats_from_raiderio(self):
+  
+    if m.get('rank', 10) > self.max_rank: continue
         stats = {"Tank": 0, "Heiler": 0, "Melee": 0, "Ranged": 0}
         members = [] # Fix für UnboundLocalError
         
@@ -53,9 +55,12 @@ class KaderIO(commands.Cog):
                         data = await resp.json()
                         members = data.get('members', [])
                         for m in members:
+                            char = m.get('character', {})
+                            # DEBUG PRINT: Zeigt uns in den Railway-Logs, wer gefunden wird
+                            print(f"DEBUG: Check {char.get('name')} | Rang: {m.get('rank')} | Lvl: {char.get('level')}")
                             if m.get('rank', 10) > self.max_rank: continue
                             char = m.get('character', {})
-                            if char.get('level', 0) < 80: continue
+                            if char.get('level', 0) < 90: continue
                             
                             spec = char.get('active_spec_name')
                             rio_role = char.get('active_role') 
