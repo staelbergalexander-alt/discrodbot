@@ -112,7 +112,7 @@ async def index():
     """
     return await render_template_string(html_template, members_list=enhanced_list)
 
-@app.route('/add_applicant', method=['POST'])
+@app.route('/add_applicant', methods=['POST'])
 async def add_applicant():
     form = await request.form
     name = form.get('name')
