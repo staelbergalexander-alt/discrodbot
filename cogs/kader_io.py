@@ -11,7 +11,7 @@ class KaderIO(commands.Cog):
         self.bot = bot
         # Variablen aus Railway
         self.realm = os.getenv("REALM") # z.B. "blackhand"
-        self.guild_name = os.getenv("How to Interrupt") # Euer Gildenname (Leerzeichen = %20)
+        self.guild_name = os.getenv("How%20to%20Interrupt") # Euer Gildenname (Leerzeichen = %20)
         self.region = "eu"
         
         self.recruitment_msg_id = int(os.getenv("RECRUITMENT_MSG_ID") or 0)
