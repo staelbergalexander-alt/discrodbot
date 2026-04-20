@@ -4,14 +4,21 @@ from quart import Quart, render_template_string, redirect, url_for
 
 app = Quart(__name__)
 
-# Pfad zur Datenbank (angepasst an Railway und Lokal)
+# Pfade und IDs
 DB_FILE = "/app/data/mitglieder_db.json" if os.path.exists("/app/data/") else "data/mitglieder_db.json"
+
+# Wir importieren die IDs aus deiner Config für den Abgleich
+OFFIZIER_ROLLE_ID = int(os.getenv('OFFIZIER_ROLLE_ID') or 0)
+MITGLIED_ROLLE_ID = int(os.getenv('MITGLIED_ROLLE_ID') or 0)
+BEWERBER_ROLLE_ID = int(os.getenv('BEWERBER_ROLLE_ID') or 0)
+SERVER_ID = int(os.getenv('SERVER_ID') or 0)
+
+# Globaler Speicher für den Bot-Zugriff
+bot_instance = None
 
 @app.route('/')
 async def index():
     members_data = {}
-    
-    # 1. Daten aus der JSON laden
     if os.path.exists(DB_FILE):
         try:
             with open(DB_FILE, "r", encoding="utf-8") as f:
@@ -19,21 +26,40 @@ async def index():
                 if content:
                     members_data = json.loads(content)
         except Exception as e:
-            print(f"Fehler beim Laden der JSON: {e}")
+            print(f"Fehler beim Laden: {e}")
 
-    # 2. Statistiken berechnen
+    # Rollen-Informationen für jeden User abrufen
+    enhanced_members = {}
     total_chars = 0
-    if isinstance(members_data, dict):
-        for user in members_data.values():
-            if isinstance(user, dict) and "chars" in user:
-                total_chars += len(user["chars"])
     
-    stats = {
-        "total_members": len(members_data),
-        "total_chars": total_chars
-    }
+    # Zugriff auf den Bot, um Rollen live zu prüfen
+    guild = None
+    if bot_instance:
+        guild = bot_instance.get_guild(SERVER_ID)
 
-    # 3. Dein HTML-Design mit eingebautem Lösch-Link
+    for uid, user_data in members_data.items():
+        role_info = {"name": "Gast", "color": "slate-500"} # Default
+        
+        if guild:
+            member = guild.get_member(int(uid))
+            if member:
+                # Prüfen welche Rolle der User hat
+                role_ids = [r.id for r in member.roles]
+                if OFFIZIER_ROLLE_ID in role_ids:
+                    role_info = {"name": "Offizier", "color": "red-500"}
+                elif MITGLIED_ROLLE_ID in role_ids:
+                    role_info = {"name": "Mitglied", "color": "emerald-500"}
+                elif BEWERBER_ROLLE_ID in role_ids:
+                    role_info = {"name": "Bewerber", "color": "amber-500"}
+
+        enhanced_members[uid] = {
+            "chars": user_data.get("chars", []),
+            "role": role_info
+        }
+        total_chars += len(user_data.get("chars", []))
+
+    stats = {"total_members": len(members_data), "total_chars": total_chars}
+
     html_template = """
     <!DOCTYPE html>
     <html lang="de">
@@ -60,52 +86,43 @@ async def index():
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                 
                 {% for uid, user_data in members.items() %}
-                <div class="bg-[#1e293b] rounded-2xl p-6 border border-slate-700 hover:border-indigo-500/50 transition-all shadow-xl">
+                <div class="bg-[#1e293b] rounded-2xl p-6 border border-slate-700 hover:border-indigo-500/50 transition-all shadow-xl relative overflow-hidden">
+                    
+                    <div class="absolute top-0 right-0 px-4 py-1 bg-{{ user_data.role.color }}/20 border-b border-l border-{{ user_data.role.color }}/30 rounded-bl-xl">
+                        <span class="text-[10px] font-bold text-{{ user_data.role.color }} uppercase tracking-widest">
+                            {{ user_data.role.name }}
+                        </span>
+                    </div>
+
                     <div class="flex justify-between items-center mb-4">
-                        <h2 class="text-slate-400 text-xs font-mono">ID: ...{{ uid[-6:] if uid|length > 6 else uid }}</h2>
-                        <span class="text-[10px] bg-slate-700 px-2 py-0.5 rounded text-slate-400 uppercase tracking-widest">User Card</span>
+                        <h2 class="text-slate-400 text-xs font-mono">ID: ...{{ uid[-6:] }}</h2>
                     </div>
 
                     <div class="space-y-4">
-                        {% if user_data.chars %}
-                            {% for char in user_data.chars %}
-                            <div class="bg-[#0f172a]/50 p-4 rounded-xl border-l-4 border-indigo-500 shadow-inner">
-                                <div class="flex justify-between items-start">
-                                    <div>
-                                        <h3 class="text-xl font-bold text-white leading-tight">{{ char.name }}</h3>
-                                        <p class="text-sm text-indigo-400 font-medium">{{ char.class }}</p>
-                                        <p class="text-[10px] text-slate-500 uppercase">{{ char.realm }}</p>
-                                    </div>
-                                    <div class="bg-indigo-500/10 border border-indigo-500/50 text-indigo-300 px-3 py-1 rounded-lg text-center">
-                                        <span class="text-xs block text-slate-500 uppercase font-bold text-[8px]">iLvl</span>
-                                        <span class="font-mono font-bold">{{ char.ilvl }}</span>
-                                    </div>
+                        {% for char in user_data.chars %}
+                        <div class="bg-[#0f172a]/50 p-4 rounded-xl border-l-4 border-indigo-500 shadow-inner">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <h3 class="text-xl font-bold text-white leading-tight">{{ char.name }}</h3>
+                                    <p class="text-sm text-indigo-400 font-medium">{{ char.class }}</p>
                                 </div>
-                                
-                                <div class="mt-4 pt-3 border-t border-slate-700/50 flex justify-between items-center">
-                                    <a href="{{ char.rio_url }}" target="_blank" class="text-xs text-orange-400 hover:text-orange-300 flex items-center gap-1">
-                                        🔗 Raider.io
-                                    </a>
-                                    
-                                    <div class="flex gap-2 items-center">
-                                        {% if loop.first %}
-                                            <span class="text-[9px] bg-indigo-600 text-white px-2 py-0.5 rounded-full font-bold">MAIN</span>
-                                        {% else %}
-                                            <span class="text-[9px] bg-slate-700 text-slate-400 px-2 py-0.5 rounded-full">TWINK</span>
-                                        {% endif %}
-                                        
-                                        <a href="/delete/{{ uid }}/{{ loop.index0 }}" 
-                                           onclick="return confirm('Soll {{ char.name }} wirklich gelöscht werden?')"
-                                           class="text-[10px] text-red-500 hover:text-white hover:bg-red-600 px-2 py-0.5 rounded border border-red-500/30 transition-all">
-                                           🗑️
-                                        </a>
-                                    </div>
+                                <div class="bg-indigo-500/10 border border-indigo-500/50 text-indigo-300 px-3 py-1 rounded-lg text-center">
+                                    <span class="text-xs block text-slate-500 uppercase font-bold text-[8px]">iLvl</span>
+                                    <span class="font-mono font-bold">{{ char.ilvl }}</span>
                                 </div>
                             </div>
-                            {% endfor %}
-                        {% else %}
-                            <p class="text-slate-500 italic text-sm text-center">Keine Charaktere gefunden.</p>
-                        {% endif %}
+                            
+                            <div class="mt-4 pt-3 border-t border-slate-700/50 flex justify-between items-center">
+                                <a href="{{ char.rio_url }}" target="_blank" class="text-xs text-orange-400 hover:text-orange-300">🔗 Raider.io</a>
+                                <div class="flex gap-2 items-center">
+                                    {% if loop.first %}
+                                        <span class="text-[9px] bg-indigo-600 text-white px-2 py-0.5 rounded-full font-bold">MAIN</span>
+                                    {% endif %}
+                                    <a href="/delete/{{ uid }}/{{ loop.index0 }}" onclick="return confirm('Löschen?')" class="text-red-500 hover:text-white transition-all text-xs">🗑️</a>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
                     </div>
                 </div>
                 {% endfor %}
@@ -115,42 +132,28 @@ async def index():
     </body>
     </html>
     """
-    return await render_template_string(html_template, members=members_data, stats=stats)
+    return await render_template_string(html_template, members=enhanced_members, stats=stats)
 
-# --- NEU: ROUTE ZUM LÖSCHEN ---
 @app.route('/delete/<uid>/<int:char_idx>')
 async def delete_char(uid, char_idx):
     if os.path.exists(DB_FILE):
         try:
             with open(DB_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            
             if uid in data and "chars" in data[uid]:
-                # Charakter an Position char_idx entfernen
                 data[uid]["chars"].pop(char_idx)
-                
-                # Wenn Liste leer ist, ganzen User löschen
-                if not data[uid]["chars"]:
-                    del data[uid]
-                
-                # Speichern
+                if not data[uid]["chars"]: del data[uid]
                 with open(DB_FILE, "w", encoding="utf-8") as f:
                     json.dump(data, f, indent=4, ensure_ascii=False)
-                    
         except Exception as e:
-            print(f"Fehler beim Löschen: {e}")
-
+            print(f"Löschfehler: {e}")
     return redirect(url_for('index'))
 
-# Start-Funktion für Gildenverwaltung.py
-async def run_web():
+async def run_web(bot=None):
+    global bot_instance
+    bot_instance = bot # Speichert den Bot, um Rollen abfragen zu können
     from hypercorn.asyncio import serve
     from hypercorn.config import Config
-    
     config = Config()
-    # Port 5000 oder Railway Port
     config.bind = [f"0.0.0.0:{os.environ.get('PORT', 5000)}"]
     await serve(app, config)
-
-if __name__ == "__main__":
-    app.run(debug=True, port=5000)

@@ -87,4 +87,4 @@ async def start_everything():
         print(f"Kritischer Fehler beim Starten: {e}")
 
 if __name__ == "__main__":
-    asyncio.run(start_everything())
+    await asyncio.gather(run_web(bot), ...)
