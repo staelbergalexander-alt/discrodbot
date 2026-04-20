@@ -4,14 +4,15 @@ from discord.ext import commands, tasks
 import aiohttp
 import os
 import asyncio
+import urllib.parse
 from datetime import datetime
 
 class KaderIO(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         # Variablen aus Railway
-        self.realm = os.getenv("REALM") # z.B. "blackhand"
-        self.guild_name = os.getenv("How%20to%20Interrupt") # Euer Gildenname (Leerzeichen = %20)
+        self.realm = os.getenv("REALM") 
+        self.guild_name = os.getenv("GUILD_NAME")
         self.region = "eu"
         
         self.recruitment_msg_id = int(os.getenv("RECRUITMENT_MSG_ID") or 0)
@@ -25,20 +26,25 @@ class KaderIO(commands.Cog):
     def get_role_from_spec(self, spec, char_class):
         """Ordnet Specs den Rollen zu."""
         tanks = ["Blood", "Guardian", "Brewmaster", "Protection", "Vengeance"]
-        healers = ["Restoration", "Holy", "Mistweaver", "Preservation", "Discipline", "Prevoker", "Mistweaver"]
+        healers = ["Restoration", "Holy", "Mistweaver", "Preservation", "Discipline", "Prevoker"]
         
         if spec in tanks: return "Tank"
         if spec in healers: return "Heiler"
         return "DPS"
 
     async def get_stats_from_raiderio(self):
-        """Liest die gesamte Gildenliste von Raider.io aus."""
+        """Liest die Gildenliste von Raider.io aus."""
         stats = {"Tank": 0, "Heiler": 0, "DPS": 0}
         
-        # URL für Gilden-Profile (Mitglieder-Feld)
-        # Beispiel: https://raider.io/api/v1/guilds/profile?region=eu&realm=blackhand&name=Gildenname&fields=members
-        url = f"https://raider.io/api/v1/guilds/profile?region={self.region}&realm={self.realm}&name={self.guild_name}&fields=members"
+        # URL-Encoding: Macht aus "Die Gilde" -> "Die%20Gilde"
+        safe_guild_name = urllib.parse.quote(self.guild_name)
+        # Macht aus "Die Silberne Hand" -> "die-silberne-hand"
+        safe_realm = urllib.parse.quote(self.realm.lower().replace(" ", "-"))
+
+        url = f"https://raider.io/api/v1/guilds/profile?region={self.region}&realm={safe_realm}&name={safe_guild_name}&fields=members"
         
+        print(f"📡 KaderIO: Versuche API-Abruf: {url}")
+
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, timeout=10) as resp:
@@ -46,22 +52,17 @@ class KaderIO(commands.Cog):
                         data = await resp.json()
                         members = data.get('members', [])
                         
-                        print(f"🔍 KaderIO: Scanne {len(members)} Gildenmitglieder von Raider.io...")
-                        
                         for m in members:
                             char = m.get('character', {})
-                            # Wir nehmen nur Chars über einem gewissen Level oder Rang, falls gewünscht
-                            # Hier zählen wir einfach alle, die einen aktiven Spec haben
                             spec = char.get('active_spec_name')
                             char_class = char.get('class')
                             
                             if spec:
                                 role = self.get_role_from_spec(spec, char_class)
                                 stats[role] += 1
-                        
                         return stats, None
                     else:
-                        return stats, f"API Fehler: {resp.status}"
+                        return stats, f"API Fehler {resp.status} (Prüfe Realm & Gildenname)"
         except Exception as e:
             return stats, str(e)
 
@@ -72,7 +73,7 @@ class KaderIO(commands.Cog):
             color=0x2b2d31
         )
         
-        # Deine Ziele (Anpassbar)
+        # Deine Ziele (Hier kannst du die Zahlen anpassen)
         goals = {"Tank": 2, "Heiler": 5, "DPS": 14}
         emojis = {"Tank": "🛡️", "Heiler": "🌿", "DPS": "⚔️"}
         
@@ -100,16 +101,15 @@ class KaderIO(commands.Cog):
             stats, err = await self.get_stats_from_raiderio()
             if not err:
                 await msg.edit(embed=self.create_embed(stats))
-                print("✅ Kader-Post via Raider.io aktualisiert.")
         except Exception as e:
-            print(f"❌ Fehler beim Auto-Update: {e}")
+            print(f"❌ KaderIO Update Fehler: {e}")
 
     @app_commands.command(name="kader_setup", description="Initialisiert den Kader-Post")
     async def kader_setup(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         stats, error = await self.get_stats_from_raiderio()
         if error:
-            return await interaction.followup.send(f"❌ Fehler beim Abrufen der Gilde: {error}")
+            return await interaction.followup.send(f"❌ {error}")
 
         embed = self.create_embed(stats)
         msg = await interaction.channel.send(embed=embed)
