@@ -178,7 +178,7 @@ class SuperQuickModal(discord.ui.Modal, title='Neuer Gilden-Eintrag'):
                     embed.add_field(name="Links", value=f"[Raider.io]({self.rio_link.value}) | [WarcraftLogs]({wcl_link})", inline=False)
 
                     # Thread-Name auf 100 Zeichen begrenzen
-                    thread_title = f"{name} | {self.real_name.value}"[:100]
+                    thread_title = f"[{char_class}] {name} | {self.real_name.value}"[:100]
                     thread_data = await forum.create_thread(name=thread_title, embed=embed)
                     
                     # Buttons in den neuen Thread senden
