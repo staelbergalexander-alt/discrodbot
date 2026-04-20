@@ -158,5 +158,6 @@ class KaderIO(commands.Cog):
         await self.perform_update()
         await interaction.followup.send("✅ Kader-Anzeige wurde manuell aktualisiert!")
 
+# Diese Funktion muss ganz links am Rand stehen (keine Einrückung!)
 async def setup(bot):
     await bot.add_cog(KaderIO(bot))
