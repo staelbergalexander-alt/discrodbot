@@ -11,7 +11,7 @@ class KaderIO(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.realm = os.getenv("REALM", "blackrock")
-        self.guild_name = os.getenv("GUILD_NAME", "How to Interrupt")
+        self.guild_name = os.getenv("How to Interrupt", "How to Interrupt")
         self.region = "eu"
         self.max_rank = int(os.getenv("MAX_KADER_RANK") or 10)
         
