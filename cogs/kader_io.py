@@ -10,7 +10,6 @@ from datetime import datetime
 class KaderIO(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        # Variablen aus Railway / Environment laden
         self.realm = os.getenv("REALM", "blackrock")
         self.guild_name = os.getenv("GUILD_NAME", "How to Interrupt")
         self.region = "eu"
@@ -19,20 +18,16 @@ class KaderIO(commands.Cog):
         self.recruitment_msg_id = int(os.getenv("RECRUITMENT_MSG_ID") or 0)
         self.recruitment_channel_id = int(os.getenv("RECRUITMENT_CH_ID") or 0)
         
-        # Startet den Loop
         self.auto_update.start()
 
     def cog_unload(self):
         self.auto_update.cancel()
 
     def get_detailed_role(self, spec, char_class):
-        """Trennt Specs präzise in Tank, Heiler, Melee oder Ranged."""
         tanks = ["Blood", "Guardian", "Brewmaster", "Protection", "Vengeance"]
         healers = ["Restoration", "Holy", "Mistweaver", "Preservation", "Discipline", "Prevoker"]
-        
         melees = ["Assassination", "Outlaw", "Subtlety", "Havoc", "Enhancement", "Feral", 
                   "Survival", "Arms", "Fury", "Retribution", "Frost", "Unholy", "Windwalker"]
-        
         rangeds = ["Affliction", "Demonology", "Destruction", "Arcane", "Fire", "Frost", 
                    "Shadow", "Balance", "Marksmanship", "Beast Mastery", "Elemental", 
                    "Devastation", "Augmentation"]
@@ -41,13 +36,11 @@ class KaderIO(commands.Cog):
         if spec in healers: return "Heiler"
         if spec in melees: return "Melee"
         if spec in rangeds: return "Ranged"
-        
         return "Ranged" if char_class in ["Mage", "Warlock", "Hunter", "Priest"] else "Melee"
 
-   async def get_stats_from_raiderio(self):
-        """Holt die Gildenliste von Raider.io und verarbeitet die Rollen."""
+    async def get_stats_from_raiderio(self):
         stats = {"Tank": 0, "Heiler": 0, "Melee": 0, "Ranged": 0}
-        members = []  # <--- WICHTIG: Hier vorab definieren!
+        members = [] # Fix für UnboundLocalError
         
         safe_name = urllib.parse.quote(self.guild_name)
         safe_realm = urllib.parse.quote(self.realm.lower().replace(" ", "-"))
@@ -59,7 +52,6 @@ class KaderIO(commands.Cog):
                     if resp.status == 200:
                         data = await resp.json()
                         members = data.get('members', [])
-                        
                         for m in members:
                             if m.get('rank', 10) > self.max_rank: continue
                             char = m.get('character', {})
@@ -74,34 +66,29 @@ class KaderIO(commands.Cog):
                                 stats[role] += 1
                             elif rio_role:
                                 if rio_role == "TANK": stats["Tank"] += 1
-                                elif rio_role == "Heiler": stats["Heiler"] += 1
+                                elif rio_role == "HEALER": stats["Heiler"] += 1
                                 else:
                                     if char_class in ["Mage", "Warlock", "Hunter"]:
                                         stats["Ranged"] += 1
                                     else:
                                         stats["Melee"] += 1
                         return stats, None
-                    else:
-                        # Falls die API einen Fehlercode wie 404 zurückgibt
-                        return stats, f"Raider.io API Fehler: Status {resp.status}"
+                    return stats, f"API Fehler {resp.status}"
         except Exception as e:
-            return stats, f"Verbindungsfehler: {str(e)}"
+            return stats, str(e)
 
     def create_embed(self, stats):
-        """Erstellt das Embed mit den Fortschrittsbalken."""
         embed = discord.Embed(
             title="🛡️ Gilden-Kader Status",
             description=f"Kader-Auslastung für die Gilde **{self.guild_name}**",
             color=0x2b2d31
         )
-        
         config = {
             "Tank":   {"goal": 2, "emoji": "🛡️", "label": "MID"},
             "Heiler": {"goal": 5, "emoji": "🌿", "label": "HIGH"},
             "Melee":  {"goal": 7, "emoji": "⚔️", "label": "MAX"},
             "Ranged": {"goal": 7, "emoji": "🏹", "label": "LOW"}
         }
-        
         content = ""
         for role, data in config.items():
             count = stats[role]
@@ -116,10 +103,8 @@ class KaderIO(commands.Cog):
         return embed
 
     async def perform_update(self):
-        """Führt das Update des Posts aus."""
         if not self.recruitment_msg_id or not self.recruitment_channel_id:
             return
-            
         try:
             channel = self.bot.get_channel(self.recruitment_channel_id) or await self.bot.fetch_channel(self.recruitment_channel_id)
             msg = await channel.fetch_message(self.recruitment_msg_id)
@@ -139,11 +124,8 @@ class KaderIO(commands.Cog):
         stats, err = await self.get_stats_from_raiderio()
         if err:
             return await interaction.followup.send(f"❌ Fehler: {err}")
-            
         msg = await interaction.channel.send(embed=self.create_embed(stats))
-        await interaction.followup.send(
-            f"✅ Post erstellt! ID für Railway `RECRUITMENT_MSG_ID`: `{msg.id}`"
-        )
+        await interaction.followup.send(f"✅ Post erstellt! ID für Railway `RECRUITMENT_MSG_ID`: `{msg.id}`")
 
     @app_commands.command(name="kader_update", description="Aktualisiert den Kader-Post sofort")
     async def kader_update(self, interaction: discord.Interaction):
