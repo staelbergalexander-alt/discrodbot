@@ -38,7 +38,7 @@ class KaderIO(commands.Cog):
         if spec in rangeds: return "Ranged"
         return "Ranged" if char_class in ["Mage", "Warlock", "Hunter", "Priest"] else "Melee"
 
-    async def get_stats_from_raiderio(self):
+   async def get_stats_from_raiderio(self):
         stats = {"Tank": 0, "Heiler": 0, "Melee": 0, "Ranged": 0}
         members = []
         
@@ -55,12 +55,11 @@ class KaderIO(commands.Cog):
                         
                         for m in members:
                             char = m.get('character', {})
-                            # DEBUG PRINT: Zeigt uns in den Railway-Logs, wer gefunden wird
-                            print(f"DEBUG: Check {char.get('name')} | Rang: {m.get('rank')} | Lvl: {char.get('level')}")
                             
-                            # Filter: Nur Ränge bis max_rank und nur Level 70+ (für Cache-Sicherheit)
-                            if m.get('rank', 10) > self.max_rank: continue
-                            if char.get('level', 0) < 90: continue
+                            # Filter: Nur Ränge bis max_rank berücksichtigen
+                            # Das Level-Check haben wir entfernt, da Raider.io hier 'None' liefert
+                            if m.get('rank', 10) > self.max_rank: 
+                                continue
                             
                             spec = char.get('active_spec_name')
                             rio_role = char.get('active_role') 
@@ -77,6 +76,9 @@ class KaderIO(commands.Cog):
                                         stats["Ranged"] += 1
                                     else:
                                         stats["Melee"] += 1
+                        
+                        # Debug: Zeigt im Log, was am Ende rauskommt
+                        print(f"DEBUG: Ergebnis -> {stats}")
                         return stats, None
                     return stats, f"API Fehler {resp.status}"
         except Exception as e:
