@@ -57,6 +57,13 @@ async def login(): return await discord_auth.create_session()
 @app.route("/callback")
 async def callback():
     await discord_auth.callback()
+    # Namen des Users in der DB aktualisieren, wenn er sich einloggt
+    user = await discord_auth.fetch_user()
+    db = load_db()
+    uid = str(user.id)
+    if uid in db:
+        db[uid]["discord_name"] = user.name
+        save_db(db)
     return redirect(url_for("index"))
 
 @app.route("/")
@@ -65,8 +72,10 @@ async def index():
     user = None
     is_admin = False
     if is_logged_in:
-        user = await discord_auth.fetch_user()
-        if str(user.id) == MY_ID: is_admin = True
+        try:
+            user = await discord_auth.fetch_user()
+            if str(user.id) == MY_ID: is_admin = True
+        except: is_logged_in = False
     db = load_db()
     return await render_template_string(HTML_TEMPLATE, db=db, colors=CLASS_COLORS, user=user, is_logged_in=is_logged_in, is_admin=is_admin)
 
@@ -82,7 +91,10 @@ async def add_char():
     if not name: return "Link ungültig", 400
     rio = await get_rio_data(name, realm)
     db = load_db()
-    if target_uid not in db: db[target_uid] = {"discord_name": f"User_{target_uid[:5]}", "chars": []}
+    
+    if target_uid not in db: 
+        db[target_uid] = {"discord_name": f"User_{target_uid[-4:]}", "chars": []}
+    
     db[target_uid]["chars"].append({
         "name": rio["name"] if rio else name.capitalize(),
         "class": rio["class"] if rio else "Unbekannt",
@@ -113,36 +125,24 @@ HTML_TEMPLATE = """
     <title>Gilden Dashboard</title>
     <style>
         :root { --bg: #0b0c10; --card: #1f2833; --cyan: #66fcf1; --text: #eee; }
-        body { font-family: sans-serif; background: var(--bg); color: var(--text); padding: 20px; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); padding: 20px; margin: 0; }
         .container { max-width: 1100px; margin: auto; }
-        .admin-panel { background: var(--card); padding: 20px; border-radius: 10px; margin-bottom: 20px; border: 1px solid var(--cyan); }
-        
-        /* Container für einen Spieler (Main + Twinks) */
-        .player-group { 
-            background: rgba(255,255,255,0.02); 
-            border-radius: 15px; 
-            padding: 15px; 
-            margin-bottom: 30px; 
-            border: 1px solid #333;
-        }
-        .player-header { border-bottom: 1px solid #444; padding-bottom: 10px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; }
-        .discord-id { font-family: monospace; color: var(--cyan); font-size: 0.8rem; }
-
+        header { display: flex; justify-content: space-between; align-items: center; padding: 20px; background: var(--card); border-radius: 12px; margin-bottom: 30px; border-bottom: 3px solid var(--cyan); }
+        .admin-panel { background: var(--card); padding: 20px; border-radius: 10px; margin-bottom: 20px; border: 1px solid #333; }
+        input { background: #0b0c10; border: 1px solid var(--cyan); color: white; padding: 10px; border-radius: 5px; margin-right: 5px; }
+        .player-group { background: rgba(255,255,255,0.03); border-radius: 15px; padding: 20px; margin-bottom: 30px; border: 1px solid #222; }
+        .player-header { border-bottom: 1px solid #444; padding-bottom: 10px; margin-bottom: 15px; display: flex; justify-content: space-between; }
         .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px; }
-        
-        /* Main Charakter Karte */
-        .card.main { border-left: 6px solid; transform: scale(1.02); background: #2a343f; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
-        /* Twink Karte */
-        .card.twink { border-left: 3px solid; opacity: 0.9; font-size: 0.9rem; }
-        
-        .card { background: var(--card); padding: 15px; border-radius: 10px; position: relative; }
+        .card { background: var(--card); padding: 15px; border-radius: 10px; position: relative; border-left: 5px solid #444; }
+        .card.main { background: #262e3b; border-width: 8px; transform: scale(1.02); }
         .ilvl { position: absolute; top: 10px; right: 10px; color: var(--cyan); font-weight: bold; }
-        .label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; font-weight: bold; padding: 2px 6px; border-radius: 4px; background: rgba(0,0,0,0.3); }
+        .label { font-size: 0.7rem; font-weight: bold; padding: 2px 5px; border-radius: 3px; background: rgba(0,0,0,0.4); }
+        .btn-rio { color: var(--cyan); text-decoration: none; font-size: 0.8rem; }
     </style>
 </head>
 <body>
     <div class="container">
-        <header style="display:flex; justify-content: space-between; align-items: center; margin-bottom:30px;">
+        <header>
             <h1>🛡️ Gilden Dashboard</h1>
             {% if is_logged_in %}<span>Hallo <strong>{{ user.name }}</strong></span>{% else %}<a href="/login" style="color:var(--cyan);">Login</a>{% endif %}
         </header>
@@ -150,9 +150,9 @@ HTML_TEMPLATE = """
         {% if is_admin %}
         <div class="admin-panel">
             <form action="/add" method="post">
-                <input type="text" name="rio_link" placeholder="Raider.io Link" required style="width:40%; padding:10px; border-radius:5px; border:none;">
-                <input type="text" name="discord_id" placeholder="Discord User ID" style="width:30%; padding:10px; border-radius:5px; border:none;">
-                <button type="submit" style="padding:10px 20px; background:var(--cyan); border:none; border-radius:5px; font-weight:bold;">Hinzufügen</button>
+                <input type="text" name="rio_link" placeholder="Raider.io Link" required style="width:40%;">
+                <input type="text" name="discord_id" placeholder="Discord ID des Spielers" style="width:30%;">
+                <button type="submit" style="padding:10px; background:var(--cyan); border:none; border-radius:5px; font-weight:bold; cursor:pointer;">Hinzufügen</button>
             </form>
         </div>
         {% endif %}
@@ -160,29 +160,28 @@ HTML_TEMPLATE = """
         {% for uid, data in db.items() %}
         <div class="player-group">
             <div class="player-header">
-                <span>👤 Spieler: <strong>{{ data.discord_name or 'Unbekannt' }}</strong></span>
-                <span class="discord-id">ID: {{ uid }}</span>
+                <span>👤 Spieler: <strong>{{ data.discord_name if data.discord_name else 'Spieler ' + uid[-4:] }}</strong></span>
+                <span style="font-family: monospace; color:#666;">ID: {{ uid }}</span>
             </div>
-            
             <div class="grid">
                 {% for char in data.chars %}
-                    {% set is_main = loop.first %}
-                    <div class="card {{ 'main' if is_main else 'twink' }}" style="border-left-color: {{ colors.get(char.class, '#444') }}">
-                        <div class="ilvl">{{ char.ilvl }}</div>
-                        <span class="label" style="color: {{ colors.get(char.class, '#fff') }}">
-                            {{ '⭐ MAIN' if is_main else '⚓ TWINK' }}
-                        </span>
-                        <div style="margin-top:10px;">
-                            <strong style="font-size: {{ '1.3rem' if is_main else '1.1rem' }};">{{ char.name }}</strong><br>
-                            <small>{{ char.class }} - {{ char.realm }}</small>
-                        </div>
-                        <div style="margin-top:10px; border-top: 1px solid rgba(255,255,255,0.1); padding-top:10px;">
-                            <a href="{{ char.rio_url }}" target="_blank" style="color:var(--cyan); text-decoration:none; font-size:0.75rem;">Raider.io ↗</a>
-                            {% if is_admin %}
-                                <a href="/delete/{{uid}}/{{loop.index0}}" style="color:#ff4d4d; float:right; text-decoration:none; font-size:0.75rem;" onclick="return confirm('Löschen?')">Entfernen</a>
-                            {% endif %}
-                        </div>
+                {% set is_main = loop.first %}
+                <div class="card {{ 'main' if is_main else '' }}" style="border-left-color: {{ colors.get(char.class, '#444') }}">
+                    <div class="ilvl">{{ char.ilvl }}</div>
+                    <span class="label" style="color: {{ colors.get(char.class, '#fff') }}">
+                        {{ '⭐ MAIN' if is_main else 'TWINK' }}
+                    </span>
+                    <div style="margin-top:10px;">
+                        <strong style="font-size: 1.2rem;">{{ char.name }}</strong><br>
+                        <small>{{ char.class }} - {{ char.realm }}</small>
                     </div>
+                    <div style="margin-top:15px; border-top: 1px solid #333; padding-top:10px;">
+                        <a href="{{ char.rio_url }}" target="_blank" class="btn-rio">Raider.io ↗</a>
+                        {% if is_admin %}
+                        <a href="/delete/{{uid}}/{{loop.index0}}" style="color:#ff4d4d; float:right; text-decoration:none; font-size:0.8rem;" onclick="return confirm('Löschen?')">Löschen</a>
+                        {% endif %}
+                    </div>
+                </div>
                 {% endfor %}
             </div>
         </div>
