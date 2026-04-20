@@ -37,7 +37,7 @@ class LogsArchiver(commands.Cog):
         async with aiohttp.ClientSession() as session:
             try:
                 async with session.get(url) as resp:
-                    if resp.status == 200: [cite: 5]
+                    if resp.status == 200:
                         logs = await resp.json()
                         if not logs: return
                         
