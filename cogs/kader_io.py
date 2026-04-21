@@ -116,7 +116,7 @@ class KaderIO(commands.Cog):
             # Die Zeichen aus deinem Bild:
             # ⬜ = Gefüllt/Besetzt
             # ▢ = Frei/Leer (oder das leere Quadrat aus dem Screenshot)
-            bar = "⬜" * filled_count + "▢" * empty_count
+            bar = "▰" * filled_count + "▱" * empty_count
             
             # Status-Text (HIGH, MID, LOW, CLOSED)
             if count >= goal:
