@@ -82,58 +82,72 @@ class KaderIO(commands.Cog):
         except Exception as e:
             return stats, str(e)
 
-    def create_embed(self, stats):
-        embed = discord.Embed(
-            title="🛡️ Gilden-Kader Status",
-            description=f"Kader-Auslastung für die Gilde **{self.guild_name}**",
-            color=0x2b2d31
-        )
-        
-        # Hier definieren wir die Ziele (Goals)
-        config = {
-            "Tank":   {"goal": 2, "emoji": "🛡️", "label": "Tanks"},
-            "Heiler": {"goal": 5, "emoji": "🌿", "label": "Heiler"},
-            "Melee":  {"goal": 7, "emoji": "⚔️", "label": "Melees"},
-            "Ranged": {"goal": 7, "emoji": "🏹", "label": "Rangeds"}
-        }
-        
-        content = ""
-        for role, data in config.items():
-            count = stats[role]
-            goal = data["goal"]
-            
-            # Balken-Berechnung (wie im Bild)
-            # Wir nehmen 10 Quadrate als Standard-Länge für die Optik
-            # oder nutzen die 'goal' Anzahl. 
-            # Da dein Bild 10 Segmente zeigt, skalieren wir es hier auf 10:
-            bar_length = 10
-            # Berechne wie viele Quadrate gefüllt sein sollen (Prozentual zum Goal)
-            filled_count = round((count / goal) * bar_length) if goal > 0 else 0
-            # Begrenzen, damit der Balken nicht sprengt
-            filled_count = min(filled_count, bar_length)
-            empty_count = bar_length - filled_count
-            
-            # Die Zeichen aus deinem Bild:
-            # ⬜ = Gefüllt/Besetzt
-            # ▢ = Frei/Leer (oder das leere Quadrat aus dem Screenshot)
-            bar = "▰" * filled_count + "▱" * empty_count
-            
-            # Status-Text (HIGH, MID, LOW, CLOSED)
-            if count >= goal:
-                status = " `CLOSED`"
-            elif count >= (goal * 0.8):
-                status = " `LOW PRIO`"
-            else:
-                status = " `HIGH PRIO`"
+def create_recruitment_text(self, stats):
+        # Deine gewünschten Symbole
+        filled_char = "▰"
+        empty_char = "▱"
+        total_blocks = 10
 
-            # Formatierung wie im Screenshot: Pfeil -> Balken -> Rolle
-            # Du kannst das Layout hier noch feinjustieren
-            content += f"➡ {bar} **{data['label']}** ({count}/{goal}){status}\n"
-        
-        embed.add_field(name="Aktuelle Rekrutierung", value=content, inline=False)
-        embed.set_footer(text=f"Letztes Update: {datetime.now().strftime('%d.%m.%Y - %H:%M')} Uhr")
-        return embed
-        
+        def get_bar(role_name, goal):
+            count = stats.get(role_name, 0)
+            if goal > 0:
+                ratio = count / goal
+                filled = max(0, min(total_blocks, round(ratio * total_blocks)))
+            else:
+                filled = 0
+            
+            if count >= goal: status = "CLOSED"
+            elif count >= (goal * 0.8): status = "LOW"
+            elif count >= (goal * 0.5): status = "MID"
+            else: status = "HIGH"
+            
+            return f"{filled_char * filled}{empty_char * (total_blocks - filled)} {status}"
+
+        # Balken berechnen
+        tank_bar   = get_bar("Tank", 2)
+        heal_bar   = get_bar("Heiler", 5)
+        melee_bar  = get_bar("Melee", 7)
+        ranged_bar = get_bar("Ranged", 7)
+
+        # Der Text mit allen Emojis aus deinem Bild
+        full_text = (
+            "🔥 **Raid & Mythic+ Gilde sucht Verstärkung!** 🔥\n\n"
+            "**Wer wir sind:**\n"
+            "Wir sind eine entspannte, aber ambitionierte Gilde mit Fokus auf Raid- und Mythic+ Content. Unser Ziel ist es, gemeinsam Progress zu machen, starke Keys zu pushen und dabei eine angenehme, stressfreie Atmosphäre zu bewahren. Bei uns steht Teamplay im Vordergrund – ohne Drama, dafür mit Motivation.\n\n"
+            "✨ **Was wir bieten:**\n"
+            "Regelmäßige Raids (HC / optional Mythic Progress)\n"
+            "Spontane Mythic+ Gruppen für kontinuierlichen Fortschritt\n"
+            "Strukturierte Organisation & erfahrene Spieler\n"
+            "Ruhige, erwachsene Community\n"
+            "Unterstützung bei Gear, Logs und persönlicher Verbesserung\n\n"
+            "📌 **WAS DU MITBRINGST:**\n"
+            "Ambitionierte Spieler für Raid & Mythic+ (Midcore)\n"
+            "Raid-Bereitschaft (Vorbereitung, Taktiken, Consumables)\n"
+            "Sicherer Umgang mit Mechanics (Interrupts, CC, Movement)\n"
+            "Zuverlässigkeit, Lernbereitschaft & Teamgeist\n\n"
+            "**UNSERE AKTUELLE KLASSEN-PRIO:**\n"
+            "Unsere M+ Gruppen und der Raidkader wachsen stetig – deshalb suchen wir wieder aktiv nach Verstärkung!\n\n"
+            f"🛡️ **TANKS** ➜ {tank_bar}\n"
+            f"🌿 **HEALER** ➜ {heal_bar}\n"
+            f"⚔️ **MELEE DPS** ➜ {melee_bar}\n"
+            f"🏹 **RANGED** ➜ {ranged_bar}\n\n"
+            "🤝 **Was wir erreichen wollen:**\n"
+            "Mehrere feste interne M+ Stammgruppen etablieren\n"
+            "Aktuellen Raid (NHC & HC) clearen – aktuell 4/9 HC, danach Mythic Trys\n"
+            "Ein kollegiales Umfeld: RL geht vor. Ehrgeiz ja – toxisches Verhalten nein\n\n"
+            "🕒 **Zeiten:**\n"
+            "**Raids:**\n"
+            "Aktuell flexibel – Termine werden spontan angekündigt\n"
+            "**Mythic+:**\n"
+            "Täglich, je nach Verfügbarkeit in spontanen Gruppen\n\n"
+            "📩 **Interesse?**\n"
+            "https://discord.gg/Kv3kpraqGk\n\n"
+            "**Battle.net:**\n"
+            "Boom#2893\n\n"
+            f"*Zuletzt aktualisiert: {datetime.now().strftime('%d.%m.%Y - %H:%M')} Uhr*"
+        )
+        return full_text
+
     async def perform_update(self):
         if not self.recruitment_msg_id or not self.recruitment_channel_id:
             return
@@ -141,8 +155,10 @@ class KaderIO(commands.Cog):
             channel = self.bot.get_channel(self.recruitment_channel_id) or await self.bot.fetch_channel(self.recruitment_channel_id)
             msg = await channel.fetch_message(self.recruitment_msg_id)
             stats, err = await self.get_stats_from_raiderio()
+            
             if not err:
-                await msg.edit(embed=self.create_embed(stats))
+                # WICHTIG: Hier nutzen wir jetzt 'content=' statt 'embed='
+                await msg.edit(content=self.create_recruitment_text(stats), embed=None)
         except Exception as e:
             print(f"❌ KaderIO Update Fehler: {e}")
 
