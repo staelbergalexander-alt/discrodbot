@@ -30,8 +30,8 @@ class GildenBot(commands.Bot):
             'cogs.recruitment', 
             'cogs.member_management', 
             'cogs.dashboard',
-            'cogs.kader_io',
-            'cogs.logs_archiv'
+            'cogs.kader_io'
+            """'cogs.logs_archiv'"""
         ]
         
         print("--- Lade Cogs ---")
