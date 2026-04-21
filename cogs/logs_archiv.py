@@ -72,28 +72,47 @@ class LogsArchiver(commands.Cog):
                 print(f"❌ LogsArchiver: Fehler beim Abruf: {e}")
 
     async def post_log(self, log_data):
+        # Den Kanal anhand der ID aus den Umgebungsvariablen suchen
         channel = self.bot.get_channel(self.archive_channel_id)
-        if not channel: 
+        
+        if not channel:
+            print(f"❌ Fehler: Kanal mit ID {self.archive_channel_id} nicht gefunden!")
             return
         
         log_id = log_data['id']
-        title = log_data.get('title', 'Neuer Raid Log')
+        title = log_data.get('title', 'Unbenannter Raid')
         owner = log_data.get('owner', 'Unbekannt')
-        # Zeitstempel von Millisekunden in lesbares Format
+        # Zone auslesen (z.B. der Name des Raids)
+        zone_name = log_data.get('zone', 'Unbekannte Zone')
+        
+        # Zeitstempel umrechnen
         start_time = datetime.fromtimestamp(log_data['start'] / 1000).strftime('%d.%m.%Y %H:%M')
         url = f"https://www.warcraftlogs.com/reports/{log_id}"
         
+        # Ein schöneres Embed erstellen
         embed = discord.Embed(
-            title=f"📜 {title}",
-            description=f"Ein neuer Raid-Log wurde auf Warcraftlogs gefunden.",
-            color=discord.Color.purple(),
-            url=url
+            title=f"📁 Archiviert: {title}",
+            description=f"Ein neuer Log wurde erfolgreich im Archiv hinterlegt.",
+            color=0x9370DB, # Ein sattes Lila
+            url=url,
+            timestamp=datetime.utcnow()
         )
-        embed.add_field(name="Erstellt von", value=owner, inline=True)
-        embed.add_field(name="Startzeit", value=start_time, inline=True)
-        embed.set_footer(text="Warcraft Logs Automatische Archivierung")
         
-        await channel.send(embed=embed)
+        embed.add_field(name="Raid/Zone", value=f"**{zone_name}**", inline=False)
+        embed.add_field(name="Erstellt von", value=owner, inline=True)
+        embed.add_field(name="Datum", value=start_time, inline=True)
+        
+        # Kleines Vorschaubild von WarcraftLogs (optional, sieht aber gut aus)
+        embed.set_thumbnail(url="https://dmszsuqyoe6y6.cloudfront.net/img/wcl/client-logo.png")
+        
+        embed.set_footer(text=f"ID: {log_id} | LogsArchiver")
+        
+        # Nachricht senden
+        try:
+            await channel.send(embed=embed)
+            print(f"✅ Log {log_id} erfolgreich in Kanal {channel.name} gepostet.")
+        except discord.Forbidden:
+            print(f"❌ Fehler: Bot hat keine Rechte, in Kanal {channel.name} zu schreiben!")
 
 async def setup(bot):
     await bot.add_cog(LogsArchiver(bot))
