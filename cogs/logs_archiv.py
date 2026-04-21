@@ -17,6 +17,14 @@ class LogsArchiver(commands.Cog):
         
         self.last_log_id = None
         self.check_logs.start()
+        
+    @commands.command(name="checklogs")
+    @commands.has_permissions(administrator=True) # Nur für Admins, um Spam zu vermeiden
+    async def manual_check(self, ctx):
+        """Triggert den Log-Check manuell."""
+        await ctx.send("🔍 Suche nach neuen Logs...")
+        await self.fetch_latest_logs()
+        await ctx.send("✅ Check abgeschlossen.")
 
     def cog_unload(self):
         self.check_logs.cancel()
