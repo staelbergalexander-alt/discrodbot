@@ -31,9 +31,8 @@ class GildenBot(commands.Bot):
             'cogs.member_management', 
             'cogs.dashboard',
             'cogs.kader_io'
-            """'cogs.logs_archiv'"""
         ]
-        
+        """'cogs.logs_archiv'"""
         print("--- Lade Cogs ---")
         for ext in extensions:
             try:
