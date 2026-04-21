@@ -4,6 +4,7 @@ from discord.ext import commands, tasks
 import aiohttp
 import os
 import asyncio
+import pytz
 import urllib.parse
 from datetime import datetime
 
@@ -78,6 +79,10 @@ class KaderIO(commands.Cog):
         heal_bar   = b("Heiler", 5)
         melee_bar  = b("Melee", 7)
         ranged_bar = b("Ranged", 7)
+        
+        tz = pytz.timezone('Europe/Berlin')
+        berlin_now = datetime.now(tz)
+        time_str = berlin_now.strftime('%d.%m.%Y - %H:%M')
 
         # Der finale Text (Exakt wie dein Screenshot)
         return (
@@ -107,7 +112,7 @@ class KaderIO(commands.Cog):
             "📩 **Interesse?**\n"
             "https://discord.gg/Kv3kpraqGk\n\n"
             "**Battle.net:** Boom#2893\n\n"
-            f"*Zuletzt aktualisiert: {datetime.now().strftime('%d.%m.%Y - %H:%M')} Uhr*"
+            f"*Zuletzt aktualisiert: {time_str} Uhr*"
         )
 
     async def perform_update(self):
