@@ -89,12 +89,12 @@ class KaderIO(commands.Cog):
             color=0x2b2d31
         )
         
-        # Hier definieren wir die Ziele
+        # Hier definieren wir die Ziele (Goals)
         config = {
-            "Tank":   {"goal": 2, "emoji": "🛡️"},
-            "Heiler": {"goal": 5, "emoji": "🌿"},
-            "Melee":  {"goal": 7, "emoji": "⚔️"},
-            "Ranged": {"goal": 7, "emoji": "🏹"}
+            "Tank":   {"goal": 2, "emoji": "🛡️", "label": "Tanks"},
+            "Heiler": {"goal": 5, "emoji": "🌿", "label": "Heiler"},
+            "Melee":  {"goal": 7, "emoji": "⚔️", "label": "Melees"},
+            "Ranged": {"goal": 7, "emoji": "🏹", "label": "Rangeds"}
         }
         
         content = ""
@@ -102,27 +102,38 @@ class KaderIO(commands.Cog):
             count = stats[role]
             goal = data["goal"]
             
-            # Dynamisches Label basierend auf der Füllung
+            # Balken-Berechnung (wie im Bild)
+            # Wir nehmen 10 Quadrate als Standard-Länge für die Optik
+            # oder nutzen die 'goal' Anzahl. 
+            # Da dein Bild 10 Segmente zeigt, skalieren wir es hier auf 10:
+            bar_length = 10
+            # Berechne wie viele Quadrate gefüllt sein sollen (Prozentual zum Goal)
+            filled_count = round((count / goal) * bar_length) if goal > 0 else 0
+            # Begrenzen, damit der Balken nicht sprengt
+            filled_count = min(filled_count, bar_length)
+            empty_count = bar_length - filled_count
+            
+            # Die Zeichen aus deinem Bild:
+            # ⬜ = Gefüllt/Besetzt
+            # ▢ = Frei/Leer (oder das leere Quadrat aus dem Screenshot)
+            bar = "⬜" * filled_count + "▢" * empty_count
+            
+            # Status-Text (HIGH, MID, LOW, CLOSED)
             if count >= goal:
-                label = "CLOSED" # Kader voll
+                status = " `CLOSED`"
             elif count >= (goal * 0.8):
-                label = "LOW"    # Fast voll, niedrige Prio
-            elif count >= (goal * 0.5):
-                label = "MID"    # Halb voll
+                status = " `LOW PRIO`"
             else:
-                label = "HIGH"   # Wenig Spieler, hohe Prio
-            
-            # Balken-Berechnung
-            filled = min(count, goal)
-            empty = max(0, goal - count)
-            bar = "█" * filled + "░" * empty
-            
-            content += f"{data['emoji']} **{role.upper():<7}** → {bar} `{count}/{goal}` `{label}`\n"
+                status = " `HIGH PRIO`"
+
+            # Formatierung wie im Screenshot: Pfeil -> Balken -> Rolle
+            # Du kannst das Layout hier noch feinjustieren
+            content += f"➡ {bar} **{data['label']}** ({count}/{goal}){status}\n"
         
-        embed.add_field(name="Kader Belegung", value=content, inline=False)
+        embed.add_field(name="Aktuelle Rekrutierung", value=content, inline=False)
         embed.set_footer(text=f"Letztes Update: {datetime.now().strftime('%d.%m.%Y - %H:%M')} Uhr")
         return embed
-
+        
     async def perform_update(self):
         if not self.recruitment_msg_id or not self.recruitment_channel_id:
             return
