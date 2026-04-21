@@ -53,32 +53,36 @@ class KaderIO(commands.Cog):
             return stats, str(e)
 
     def create_recruitment_text(self, stats):
-        # Symbole für die Balken
+        # Symbole
         f_c, e_c = "▰", "▱"
         total_blocks = 10
 
-        # Hilfsfunktion für die Balken-Berechnung
-        def b(role_name, goal):
-            c = stats.get(role_name, 0)
-            if goal > 0:
-                # Berechne Füllstand (max 10)
-                p = max(0, min(total_blocks, round((c / goal) * total_blocks)))
-            else:
-                p = 0
+        def b(role_name, goal, manual_count=None):
+            # Wenn manual_count gesetzt ist, ignorieren wir Raider.io für diese Rolle
+            count = manual_count if manual_count is not None else stats.get(role_name, 0)
             
-            # Status Logik
-            if c >= goal: s = "CLOSED"
-            elif c >= (goal * 0.8): s = "LOW"
-            elif c >= (goal * 0.5): s = "MID"
-            else: s = "HIGH"
+            percent = (count / goal) if goal > 0 else 0
+            filled = max(0, min(total_blocks, round(percent * total_blocks)))
             
-            return f"{f_c * p}{e_c * (total_blocks - p)} {s}"
+            if count >= goal: 
+                s = "CLOSED"
+            elif count >= (goal * 0.8): 
+                s = "LOW"
+            elif count >= (goal * 0.5): 
+                s = "MID"
+            else: 
+                s = "HIGH"
+            
+            return f"{f_c * filled}{e_c * (total_blocks - filled)} {s}"
 
-        # Variablen definieren
-        tank_bar   = b("Tank", 2)
-        heal_bar   = b("Heiler", 5)
-        melee_bar  = b("Melee", 7)
-        ranged_bar = b("Ranged", 7)
+        # --- HIER MANUELLE KORREKTUR EINTRAGEN ---
+        # Wenn Raider.io die Tanks nicht findet, schreiben wir hier '2' rein:
+        tank_bar   = b("Tank", 2, manual_count=2) # 2 von 2 -> Immer CLOSED
+        
+        # Die anderen lassen wir auf Automatik (stats.get)
+        heal_bar   = b("Heiler", 5, manual_count=2) 
+        melee_bar  = b("Melee", 7, manual_count=5)  
+        ranged_bar = b("Ranged", 7, manual_count=4)
         
         tz = pytz.timezone('Europe/Berlin')
         berlin_now = datetime.now(tz)
