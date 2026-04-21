@@ -45,12 +45,21 @@ class LogsArchiver(commands.Cog):
                         
                         latest_log = logs[0]
                         log_id = latest_log.get('id')
-                        
-                        # Prüfen, ob es ein neuer Log ist
-                        if self.last_log_id is not None and log_id != self.last_log_id:
+
+                        # LOGIK-ÄNDERUNG HIER:
+                        # Wenn wir noch gar keine ID haben (erster Start), speichern wir die aktuelle 
+                        # nur ab, ohne zu posten, um einen Spam-Flash beim Start zu vermeiden.
+                        if self.last_log_id is None:
+                            print(f"✅ Initialisierung: Speichere aktuellen Log {log_id} als Referenz.")
+                            self.save_last_log_id(log_id)
+                            return
+
+                        # Wenn die ID sich unterscheidet, ist es ein wirklich neuer Log
+                        if log_id != self.last_log_id:
+                            print(f"🔔 Neuer Log gefunden: {log_id}")
                             await self.post_log(latest_log)
-                        
-                        self.last_log_id = log_id
+                            self.save_last_log_id(log_id) # Speichern für den nächsten Check/Neustart
+                            
             except Exception as e:
                 print(f"❌ LogsArchiver: Fehler beim Abruf: {e}")
 
