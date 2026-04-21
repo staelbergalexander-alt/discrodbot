@@ -52,62 +52,79 @@ class KaderIO(commands.Cog):
             return stats, str(e)
 
     def create_recruitment_text(self, stats):
+        # Symbole für die Balken
         f_c, e_c = "▰", "▱"
-        def b(n, g):
-            c = stats.get(n, 0)
-            p = max(0, min(10, round((c/g)*10))) if g > 0 else 0
-            s = "CLOSED" if c >= g else ("LOW" if c >= g*0.8 else "HIGH")
-            return f"{f_c*p}{e_c*(10-p)} {s}"
+        total_blocks = 10
 
-        t_b, h_b = b("Tank", 2), b("Heiler", 5)
-        m_b, r_b = b("Melee", 7), b("Ranged", 7)
+        # Hilfsfunktion für die Balken-Berechnung
+        def b(role_name, goal):
+            c = stats.get(role_name, 0)
+            if goal > 0:
+                # Berechne Füllstand (max 10)
+                p = max(0, min(total_blocks, round((c / goal) * total_blocks)))
+            else:
+                p = 0
+            
+            # Status Logik
+            if c >= goal: s = "CLOSED"
+            elif c >= (goal * 0.8): s = "LOW"
+            elif c >= (goal * 0.5): s = "MID"
+            else: s = "HIGH"
+            
+            return f"{f_c * p}{e_c * (total_blocks - p)} {s}"
 
+        # Variablen definieren
+        tank_bar   = b("Tank", 2)
+        heal_bar   = b("Heiler", 5)
+        melee_bar  = b("Melee", 7)
+        ranged_bar = b("Ranged", 7)
+
+        # Der finale Text (Exakt wie dein Screenshot)
         return (
             "🔥 **Raid & Mythic+ Gilde sucht Verstärkung!** 🔥\n\n"
             "**Wer wir sind:**\n"
-            "Wir sind eine entspannte, aber ambitionierte Gilde mit Fokus auf Raid- und Mythic+ Content. Unser Ziel ist es, gemeinsam Progress zu machen, starke Keys zu pushen und dabei eine angenehme, stressfreie Atmosphäre zu bewahren. Bei uns steht Teamplay im Vordergrund – ohne Drama, dafür mit Motivation.\n\n"
+            "Wir sind eine entspannte, aber ambitionierte Gilde mit Fokus auf Raid- und Mythic+ Content. "
+            "Unser Ziel ist es, gemeinsam Progress zu machen, starke Keys zu pushen und dabei eine angenehme, "
+            "stressfreie Atmosphäre zu bewahren.\n\n"
             "✨ **Was wir bieten:**\n"
             "Regelmäßige Raids (HC / optional Mythic Progress)\n"
             "Spontane Mythic+ Gruppen für kontinuierlichen Fortschritt\n"
-            "Strukturierte Organisation & erfahrene Spieler\n"
-            "Ruhige, erwachsene Community\n"
-            "Unterstützung bei Gear, Logs und persönlicher Verbesserung\n\n"
+            "Strukturierte Organisation & erfahrene Spieler\n\n"
             "📌 **WAS DU MITBRINGST:**\n"
             "Ambitionierte Spieler für Raid & Mythic+ (Midcore)\n"
-            "Raid-Bereitschaft (Vorbereitung, Taktiken, Consumables)\n"
-            "Sicherer Umgang mit Mechanics (Interrupts, CC, Movement)\n"
             "Zuverlässigkeit, Lernbereitschaft & Teamgeist\n\n"
             "**UNSERE AKTUELLE KLASSEN-PRIO:**\n"
             "Unsere M+ Gruppen und der Raidkader wachsen stetig – deshalb suchen wir wieder aktiv nach Verstärkung!\n\n"
-            f"🛡️ **TANKS** ➜ {t_b}\n"
-            f"🌿 **HEALER** ➜ {h_b}\n"
-            f"⚔️ **MELEE DPS** ➜ {m_b}\n"
-            f"🏹 **RANGED** ➜ {r_b}\n\n"
+            f"🛡️ **TANKS** ➜ {tank_bar}\n"
+            f"🌿 **HEALER** ➜ {heal_bar}\n"
+            f"⚔️ **MELEE DPS** ➜ {melee_bar}\n"
+            f"🏹 **RANGED** ➜ {ranged_bar}\n\n"
             "🤝 **Was wir erreichen wollen:**\n"
             "Mehrere feste interne M+ Stammgruppen etablieren\n"
-            "Aktuellen Raid (NHC & HC) clearen – aktuell 4/9 HC, danach Mythic Trys\n"
-            "Ein kollegiales Umfeld: RL geht vor. Ehrgeiz ja – toxisches Verhalten nein\n\n"
+            "Aktuellen Raid (NHC & HC) clearen – aktuell 4/9 HC\n\n"
             "🕒 **Zeiten:**\n"
-            "**Raids:**\n"
-            "Aktuell flexibel – Termine werden spontan angekündigt\n"
-            "**Mythic+:**\n"
-            "Täglich, je nach Verfügbarkeit in spontanen Gruppen\n\n"
+            "Raids: Aktuell flexibel | Mythic+: Täglich spontan\n\n"
             "📩 **Interesse?**\n"
             "https://discord.gg/Kv3kpraqGk\n\n"
-            "**Battle.net:**\n"
-            "Boom#2893\n\n"
+            "**Battle.net:** Boom#2893\n\n"
             f"*Zuletzt aktualisiert: {datetime.now().strftime('%d.%m.%Y - %H:%M')} Uhr*"
         )
 
     async def perform_update(self):
-        if not self.recruitment_msg_id: return
+        if not self.recruitment_msg_id or not self.recruitment_channel_id:
+            return
         try:
-            ch = self.bot.get_channel(self.recruitment_channel_id) or await self.bot.fetch_channel(self.recruitment_channel_id)
-            msg = await ch.fetch_message(self.recruitment_msg_id)
+            channel = self.bot.get_channel(self.recruitment_channel_id) or await self.bot.fetch_channel(self.recruitment_channel_id)
+            msg = await channel.fetch_message(self.recruitment_msg_id)
             stats, err = await self.get_stats_from_raiderio()
+            
             if not err:
-                await msg.edit(content=self.create_recruitment_text(stats))
-        except Exception as e: print(f"Update Error: {e}")
+                # Wir editieren die Nachricht und ENTFERNEN das Embed (embed=None)
+                # Der gesamte Inhalt steht nun in 'content'
+                await msg.edit(content=self.create_recruitment_text(stats), embed=None)
+                print("✅ Rekrutierungstext erfolgreich aktualisiert.")
+        except Exception as e:
+            print(f"❌ Update Error: {e}")
 
     @tasks.loop(hours=1)
     async def auto_update(self):
