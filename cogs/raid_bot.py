@@ -4,7 +4,7 @@ from discord import ui
 import sqlite3
 
 # --- KONFIGURATION ---
-RAID_CATEGORY_ID = 123456789012345678 # Setze hier deine Kategorie-ID ein
+RAID_CATEGORY_ID = int(os.getenv('RAID_CATEGORY_ID') or 0)
 CLASS_ORDER = [
     "Krieger", "Paladin", "Todesritter", "Jäger", "Schamane", 
     "Druide", "Schurke", "Mönch", "Dämonenjäger", "Rufer", 
