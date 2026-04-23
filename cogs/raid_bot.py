@@ -1,117 +1,106 @@
 import discord
 from discord.ext import commands
+from discord import ui
 import sqlite3
 
+# --- KONFIGURATION ---
+RAID_CATEGORY_ID = 123456789012345678 # Setze hier deine Kategorie-ID ein
+CLASS_ORDER = [
+    "Krieger", "Paladin", "Todesritter", "Jäger", "Schamane", 
+    "Druide", "Schurke", "Mönch", "Dämonenjäger", "Rufer", 
+    "Magier", "Hexenmeister", "Priester"
+]
 
-RAID_CATEGORY_ID = int(os.getenv('RAID_CATEGORY_ID') or 0)
-
-# Hilfsfunktion zum Speichern/Abrufen
-def update_signup(user_id, name, wow_class):
+def update_db_signup(channel_id, user_id, name, wow_class):
     conn = sqlite3.connect('raid.db')
     c = conn.cursor()
-    c.execute("REPLACE INTO signups (user_id, user_name, wow_class) VALUES (?, ?, ?)", 
-              (user_id, name, wow_class))
-    conn.commit()
+    # Tabelle erstellen falls nicht existent
+    c.execute('''CREATE TABLE IF NOT EXISTS signups 
+                 (channel_id INTEGER, user_id INTEGER, user_name TEXT, wow_class TEXT, 
+                 PRIMARY KEY (channel_id, user_id))''')
     
-    # Alle Anmeldungen für das Embed abrufen
-    c.execute("SELECT user_name, wow_class FROM signups")
+    if wow_class is None: # Löschen
+        c.execute("DELETE FROM signups WHERE channel_id = ? AND user_id = ?", (channel_id, user_id))
+    else: # Speichern
+        c.execute("REPLACE INTO signups (channel_id, user_id, user_name, wow_class) VALUES (?, ?, ?, ?)", 
+                  (channel_id, user_id, name, wow_class))
+    
+    conn.commit()
+    c.execute("SELECT user_name, wow_class FROM signups WHERE channel_id = ?", (channel_id,))
     rows = c.fetchall()
     conn.close()
+    
+    # Sortieren nach CLASS_ORDER
+    rows.sort(key=lambda x: CLASS_ORDER.index(x[1]) if x[1] in CLASS_ORDER else 99)
     return rows
 
-class ClassSelect(discord.ui.Select):
+class ClassSelect(ui.Select):
     def __init__(self):
-        options = [
-            discord.SelectOption(label="Krieger", emoji="🛡️"),
-            discord.SelectOption(label="Magier", emoji="🔥"),
-            discord.SelectOption(label="Priester", emoji="✨"),
-            discord.SelectOption(label="Hexenmeister", emoji="💜"),
-            discord.SelectOption(label="Druide", emoji="🍃"),
-            discord.SelectOption(label="Paladin", emoji="🔨"),
-            # Füge hier weitere Klassen hinzu...
-        ]
-        super().__init__(placeholder="Wähle deine Klasse...", options=options)
+        options = [discord.SelectOption(label=c, emoji=self.get_emoji(c)) for c in CLASS_ORDER]
+        super().__init__(placeholder="Wähle deine Klasse...", options=options, custom_id="raid_bot:class_select")
+
+    def get_emoji(self, cls):
+        emojis = {"Krieger": "🛡️", "Paladin": "🔨", "Todesritter": "❄️", "Jäger": "🏹", "Schamane": "⚡", 
+                  "Druide": "🍃", "Schurke": "🗡️", "Mönch": "🍺", "Dämonenjäger": "bat", "Rufer": "🦎", 
+                  "Magier": "🔥", "Hexenmeister": "💜", "Priester": "✨"}
+        return emojis.get(cls, "❓")
 
     async def callback(self, interaction: discord.Interaction):
-        # 3. & 4. Daten in DB speichern und Liste abrufen
-        all_signups = update_signup(interaction.user.id, interaction.user.display_name, self.values[0])
-        
-        # Embed aktualisieren
-        new_embed = interaction.message.embeds[0]
-        signup_list = "\n".join([f"{name} ({w_class})" for name, w_class in all_signups])
-        
-        if not signup_list:
-            signup_list = "Noch keine Anmeldungen."
-            
-        # Wir überschreiben das Feld "Teilnehmer" im Embed
-        new_embed.clear_fields()
-        new_embed.add_field(name="Teilnehmer", value=signup_list, inline=False)
-        
-        await interaction.response.edit_message(embed=new_embed)
+        all_signups = update_db_signup(interaction.channel_id, interaction.user.id, interaction.user.display_name, self.values[0])
+        await self.refresh_message(interaction, all_signups)
 
-class RaidView(discord.ui.View):
+    async def refresh_message(self, interaction, all_signups):
+        embed = interaction.message.embeds[0]
+        signup_text = "\n".join([f"**{w_class}**: {name}" for name, w_class in all_signups]) or "Noch keine Anmeldungen."
+        embed.set_field_at(0, name=f"Teilnehmer ({len(all_signups)})", value=signup_text, inline=False)
+        await interaction.response.edit_message(embed=embed)
+
+class RaidView(ui.View):
     def __init__(self):
         super().__init__(timeout=None)
         self.add_item(ClassSelect())
 
-    @discord.ui.button(label="Abmelden", style=discord.ButtonStyle.red)
-    async def leave(self, interaction: discord.Interaction, button: discord.ui.Button):
-        conn = sqlite3.connect('raid.db')
-        conn.execute("DELETE FROM signups WHERE user_id = ?", (interaction.user.id,))
-        conn.commit()
-        conn.close()
+    @ui.button(label="Abmelden", style=discord.ButtonStyle.red, custom_id="raid_bot:leave")
+    async def leave(self, interaction: discord.Interaction, button: ui.Button):
+        all_signups = update_db_signup(interaction.channel_id, interaction.user.id, interaction.user.display_name, None)
+        embed = interaction.message.embeds[0]
+        signup_text = "\n".join([f"**{w_class}**: {name}" for name, w_class in all_signups]) or "Noch keine Anmeldungen."
+        embed.set_field_at(0, name=f"Teilnehmer ({len(all_signups)})", value=signup_text, inline=False)
+        await interaction.response.edit_message(embed=embed)
+
+class RaidDetailModal(ui.Modal, title='Neuen Raid planen'):
+    raid_name = ui.TextInput(label='Raid Instanz', placeholder='z.B. Palast der Schatten')
+    raid_date = ui.TextInput(label='Datum', placeholder='z.B. Mittwoch, 24.05.')
+    raid_time = ui.TextInput(label='Uhrzeit', placeholder='19:45 - 22:30 Uhr')
+
+    async def on_submit(self, interaction: discord.Interaction):
+        category = discord.utils.get(interaction.guild.categories, id=RAID_CATEGORY_ID)
+        channel = await interaction.guild.create_text_channel(f"raid-{self.raid_date.value}", category=category)
         
-        # Liste nach dem Löschen neu laden
-        await self.callback_update(interaction)
-
-    async def callback_update(self, interaction):
-        # Hilfsfunktion zum Refreshen des Embeds nach Abmeldung
-        conn = sqlite3.connect('raid.db')
-        c = conn.cursor()
-        c.execute("SELECT user_name, wow_class FROM signups")
-        rows = c.fetchall()
-        conn.close()
+        embed = discord.Embed(title=f"⚔️ {self.raid_name.value}", color=discord.Color.green(),
+                              description=f"📅 **Datum:** {self.raid_date.value}\n⏰ **Zeit:** {self.raid_time.value}")
+        embed.add_field(name="Teilnehmer (0)", value="Noch keine Anmeldungen.", inline=False)
         
-        new_embed = interaction.message.embeds[0]
-        new_embed.clear_fields()
-        signup_list = "\n".join([f"{n} ({c})" for n, c in rows]) or "Noch keine Anmeldungen."
-        new_embed.add_field(name="Teilnehmer", value=signup_list, inline=False)
-        await interaction.response.edit_message(embed=new_embed)
+        await channel.send("@everyone", embed=embed, view=RaidView())
+        await interaction.response.send_message(f"Raid-Channel {channel.mention} erstellt!", ephemeral=True)
 
-@bot.command()
-async def raid_setup(ctx):
-    embed = discord.Embed(
-        title="⚔️ Raid Anmeldung",
-        description="Bitte wähle unten deine Klasse aus, um dich für den nächsten Raid anzumelden!",
-        color=discord.Color.blue()
-    )
-    embed.add_field(name="Teilnehmer", value="Noch keine Anmeldungen.", inline=False)
-    await ctx.send(embed=embed, view=RaidView())
-    
-@bot.command()
-@commands.has_permissions(manage_channels=True) # Nur Admins/Leiter dürfen das
-async def create_raid(ctx, raid_name: str):
-    guild = ctx.guild
-    category = discord.utils.get(guild.categories, id=RAID_CATEGORY_ID)
+class AdminControlView(ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
 
-    if category is None:
-        await ctx.send("Fehler: Die angegebene Kategorie wurde nicht gefunden!")
-        return
+    @ui.button(label="➕ Neuen Raid planen", style=discord.ButtonStyle.grey, custom_id="raid_bot:admin_setup")
+    async def plan(self, interaction: discord.Interaction, button: ui.Button):
+        await interaction.response.send_modal(RaidDetailModal())
 
-    # 1. Neuen Channel in der Kategorie erstellen
-    channel_name = f"raid-{raid_name}"
-    new_channel = await guild.create_text_channel(channel_name, category=category)
+class RaidBotCog(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
 
-    # 2. Bestätigung im aktuellen Channel
-    await ctx.send(f"✅ Raid-Channel {new_channel.mention} wurde erstellt!")
+    @commands.command()
+    @commands.has_permissions(administrator=True)
+    async def setup_planner(self, ctx):
+        embed = discord.Embed(title="🛡️ Raid-Leitung", description="Klicke unten, um einen neuen Raid zu erstellen.", color=discord.Color.blue())
+        await ctx.send(embed=embed, view=AdminControlView())
 
-    # 3. Das Anmelde-Embed im NEUEN Channel posten
-    embed = discord.Embed(
-        title=f"⚔️ Anmeldung: {raid_name}",
-        description="Wähle deine Klasse, um dich für diesen Raid einzutragen.",
-        color=discord.Color.green()
-    )
-    embed.add_field(name="Teilnehmer", value="Noch keine Anmeldungen.", inline=False)
-    
-    # Hier nutzen wir die RaidView von oben
-    await new_channel.send(embed=embed, view=RaidView())
+async def setup(bot):
+    await bot.add_cog(RaidBotCog(bot))

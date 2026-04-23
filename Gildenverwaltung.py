@@ -47,7 +47,10 @@ class GildenBot(commands.Bot):
         # Wir importieren die View lokal hier drinnen, um Kreis-Import-Fehler zu vermeiden.
         try:
             from cogs.utilities import RaidPollView
+            from cogs.raid_bot import RaidView, AdminControlView
             self.add_view(RaidPollView())
+            self.add_view(RaidView())           # NEU REGISTRIEREN
+            self.add_view(AdminControlView())   # NEU REGISTRIEREN
             print("✅ Persistente Raid-Umfrage registriert")
         except Exception as e:
             print(f"⚠️ Konnte RaidPollView nicht registrieren: {e}")
