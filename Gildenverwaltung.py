@@ -30,6 +30,7 @@ class GildenBot(commands.Bot):
             'cogs.recruitment', 
             'cogs.member_management', 
             'cogs.dashboard',
+            'cogs.raid_bot',
             'cogs.kader_io'
         ]
         """'cogs.logs_archiv'"""

@@ -2,6 +2,9 @@ import discord
 from discord.ext import commands
 import sqlite3
 
+
+RAID_CATEGORY_ID = int(os.getenv('RAID_CATEGORY_ID') or 0)
+
 # Hilfsfunktion zum Speichern/Abrufen
 def update_signup(user_id, name, wow_class):
     conn = sqlite3.connect('raid.db')
@@ -84,3 +87,31 @@ async def raid_setup(ctx):
     )
     embed.add_field(name="Teilnehmer", value="Noch keine Anmeldungen.", inline=False)
     await ctx.send(embed=embed, view=RaidView())
+    
+@bot.command()
+@commands.has_permissions(manage_channels=True) # Nur Admins/Leiter dürfen das
+async def create_raid(ctx, raid_name: str):
+    guild = ctx.guild
+    category = discord.utils.get(guild.categories, id=RAID_CATEGORY_ID)
+
+    if category is None:
+        await ctx.send("Fehler: Die angegebene Kategorie wurde nicht gefunden!")
+        return
+
+    # 1. Neuen Channel in der Kategorie erstellen
+    channel_name = f"raid-{raid_name}"
+    new_channel = await guild.create_text_channel(channel_name, category=category)
+
+    # 2. Bestätigung im aktuellen Channel
+    await ctx.send(f"✅ Raid-Channel {new_channel.mention} wurde erstellt!")
+
+    # 3. Das Anmelde-Embed im NEUEN Channel posten
+    embed = discord.Embed(
+        title=f"⚔️ Anmeldung: {raid_name}",
+        description="Wähle deine Klasse, um dich für diesen Raid einzutragen.",
+        color=discord.Color.green()
+    )
+    embed.add_field(name="Teilnehmer", value="Noch keine Anmeldungen.", inline=False)
+    
+    # Hier nutzen wir die RaidView von oben
+    await new_channel.send(embed=embed, view=RaidView())
