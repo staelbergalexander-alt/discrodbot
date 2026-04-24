@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 from discord import ui
 import sqlite3
+import os
 
 # --- KONFIGURATION ---
 RAID_CATEGORY_ID = int(os.getenv('RAID_CATEGORY_ID') or 0)
