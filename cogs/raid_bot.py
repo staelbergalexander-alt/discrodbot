@@ -5,8 +5,10 @@ import sqlite3
 import os
 
 # --- KONFIGURATION ---
+# Lädt die Kategorie-ID aus der .env Datei
 RAID_CATEGORY_ID = int(os.getenv('RAID_CATEGORY_ID') or 0)
-# Definition der Klassen mit DEINEN Icons (Leerzeichen am Ende entfernt!)
+
+# Englische Klassennamen und Specs
 WOW_DATA = {
     "Warrior": {"icon": "<:wowwarrior:1493404491045797918>", "Specs": {"Protection": "🛡️ Tank", "Fury": "⚔️ DD", "Arms": "⚔️ DD"}},
     "Paladin": {"icon": "<:wowpaladin:1493404654434783232>", "Specs": {"Protection": "🛡️ Tank", "Holy": "🌿 Heal", "Retribution": "⚔️ DD"}},
@@ -23,26 +25,40 @@ WOW_DATA = {
     "Priest": {"icon": "<:wowpriest:1493404618141470801>", "Specs": {"Discipline": "🌿 Heal", "Holy": "🌿 Heal", "Shadow": "⚔️ DD"}}
 }
 
-def update_db_signup(channel_id, user_id, name, wow_class=None, spec=None, role=None):
+def update_db_signup(channel_id, user_id, name, wow_class=None, spec=None, role=None, is_late=False):
     conn = sqlite3.connect('raid.db')
     c = conn.cursor()
+    
+    # Tabelle erstellen falls nicht existent (inklusive is_late)
     c.execute('''CREATE TABLE IF NOT EXISTS signups 
                  (channel_id INTEGER, user_id INTEGER, user_name TEXT, 
-                  wow_class TEXT, spec TEXT, role TEXT, 
+                  wow_class TEXT, spec TEXT, role TEXT, is_late INTEGER DEFAULT 0,
                   PRIMARY KEY (channel_id, user_id))''')
-    if wow_class is None:
+    
+    # Datenbank-Migration: Falls is_late fehlt (für bestehende DBs)
+    try:
+        c.execute("ALTER TABLE signups ADD COLUMN is_late INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
+    if wow_class is None and not is_late:
+        # Abmelden
         c.execute("DELETE FROM signups WHERE channel_id = ? AND user_id = ?", (channel_id, user_id))
+    elif is_late:
+        # Nur Late-Status updaten (User muss bereits existieren)
+        c.execute("UPDATE signups SET is_late = 1 WHERE channel_id = ? AND user_id = ?", (channel_id, user_id))
     else:
-        c.execute("REPLACE INTO signups (channel_id, user_id, user_name, wow_class, spec, role) VALUES (?, ?, ?, ?, ?, ?)", 
+        # Neu anmelden (is_late wird auf 0 zurückgesetzt)
+        c.execute("REPLACE INTO signups (channel_id, user_id, user_name, wow_class, spec, role, is_late) VALUES (?, ?, ?, ?, ?, ?, 0)", 
                   (channel_id, user_id, name, wow_class, spec, role))
+    
     conn.commit()
-    c.execute("SELECT user_name, wow_class, spec, role FROM signups WHERE channel_id = ?", (channel_id,))
+    c.execute("SELECT user_name, wow_class, spec, role, is_late FROM signups WHERE channel_id = ?", (channel_id,))
     rows = c.fetchall()
     conn.close()
     return rows
 
 async def update_raid_message(channel, all_signups):
-    """Sucht die Raid-Nachricht im Kanal und aktualisiert das Embed."""
     target_msg = None
     async for msg in channel.history(limit=20):
         if msg.author.id == channel.guild.me.id and msg.embeds:
@@ -55,98 +71,126 @@ async def update_raid_message(channel, all_signups):
 
     embed = target_msg.embeds[0]
     categories = {"🛡️ Tank": [], "🌿 Heal": [], "⚔️ DD": []}
-    for name, w_class, s_db, r_db in all_signups:
+    
+    for name, w_class, s_db, r_db, is_late in all_signups:
         icon = WOW_DATA.get(w_class, {}).get("icon", "").strip()
+        late_prefix = "⏰ " if is_late else ""
         if r_db in categories:
-            categories[r_db].append(f"{icon} **{name}** ({s_db})")
+            categories[r_db].append(f"{late_prefix}{icon} **{name}** ({s_db})")
     
     embed.clear_fields()
     for r, m in categories.items():
-        embed.add_field(name=f"{r} ({len(m)})", value="\n".join(m) if m else "Keine", inline=False)
-    embed.set_footer(text=f"Gesamtanzahl Teilnehmer: {len(all_signups)}")
+        embed.add_field(name=f"{r} ({len(m)})", value="\n".join(m) if m else "None", inline=False)
     
+    embed.set_footer(text=f"Total Participants: {len(all_signups)}")
     await target_msg.edit(embed=embed)
+
+# --- UI KOMPONENTEN ---
 
 class SpecSelect(ui.Select):
     def __init__(self, wow_class, spec_options):
-        super().__init__(placeholder=f"Spec für {wow_class}...", options=spec_options)
+        super().__init__(placeholder=f"Select Spec for {wow_class}...", options=spec_options)
         self.wow_class = wow_class
 
     async def callback(self, interaction: discord.Interaction):
         spec, role = self.values[0].split("|")
         all_signups = update_db_signup(interaction.channel_id, interaction.user.id, interaction.user.display_name, self.wow_class, spec, role)
         
-        await interaction.response.send_message(f"✅ Als {spec} ({self.wow_class}) angemeldet!", ephemeral=True)
+        await interaction.response.send_message(f"✅ Signed up as {spec} {self.wow_class}!", ephemeral=True)
         await update_raid_message(interaction.channel, all_signups)
 
 class ClassSelect(ui.Select):
     def __init__(self):
         options = [discord.SelectOption(label=name, emoji=data["icon"].strip()) for name, data in WOW_DATA.items()]
-        super().__init__(placeholder="Wähle deine Klasse...", options=options, custom_id="raid_bot:class_select")
+        super().__init__(placeholder="Choose your Class...", options=options, custom_id="raid_bot:class_select")
 
     async def callback(self, interaction: discord.Interaction):
         chosen_class = self.values[0]
         specs = [discord.SelectOption(label=s, value=f"{s}|{r}", description=r) for s, r in WOW_DATA[chosen_class]["Specs"].items()]
         view = ui.View().add_item(SpecSelect(chosen_class, specs))
-        await interaction.response.send_message(f"Welche Spec spielst du?", view=view, ephemeral=True)
+        await interaction.response.send_message(f"Which specialization are you playing?", view=view, ephemeral=True)
 
 class RaidView(ui.View):
     def __init__(self):
         super().__init__(timeout=None)
         self.add_item(ClassSelect())
 
-    @ui.button(label="Abmelden", style=discord.ButtonStyle.red, custom_id="raid_bot:leave")
+    @ui.button(label="Late Sign", style=discord.ButtonStyle.secondary, emoji="⏰", custom_id="raid_bot:late")
+    async def late(self, interaction: discord.Interaction, button: ui.Button):
+        # Prüfen ob User angemeldet ist
+        conn = sqlite3.connect('raid.db')
+        c = conn.cursor()
+        c.execute("SELECT 1 FROM signups WHERE channel_id = ? AND user_id = ?", (interaction.channel_id, interaction.user.id))
+        user_exists = c.fetchone()
+        conn.close()
+
+        if not user_exists:
+            return await interaction.response.send_message("❌ Please select a class first before marking yourself as late!", ephemeral=True)
+
+        all_signups = update_db_signup(interaction.channel_id, interaction.user.id, interaction.user.display_name, is_late=True)
+        await interaction.response.send_message("⏰ You have been marked as late.", ephemeral=True)
+        await update_raid_message(interaction.channel, all_signups)
+
+    @ui.button(label="Sign Off", style=discord.ButtonStyle.red, custom_id="raid_bot:leave")
     async def leave(self, interaction: discord.Interaction, button: ui.Button):
         all_signups = update_db_signup(interaction.channel_id, interaction.user.id, interaction.user.display_name, None)
-        await interaction.response.defer() # Verhindert "Interaktion fehlgeschlagen"
+        await interaction.response.defer()
         await update_raid_message(interaction.channel, all_signups)
 
 # --- ADMIN BEREICH ---
 
 class RaidDetailModal(ui.Modal, title='Raid Details'):
-    raid_name = ui.TextInput(label='Raid Instanz', placeholder='z.B. Palast der Schatten')
-    raid_date = ui.TextInput(label='Datum', placeholder='z.B. 24-05')
-    raid_time = ui.TextInput(label='Uhrzeit', placeholder='19:45')
-    raid_info = ui.TextInput(label='Zusatz-Info', style=discord.TextStyle.paragraph, required=False)
+    raid_name = ui.TextInput(label='Raid Instance', placeholder='e.g., Nerub-ar Palace')
+    raid_date = ui.TextInput(label='Date', placeholder='e.g., 2024-11-20')
+    raid_time = ui.TextInput(label='Time', placeholder='19:45')
+    raid_info = ui.TextInput(label='Extra Info', style=discord.TextStyle.paragraph, required=False)
 
     def __init__(self, difficulty):
         super().__init__()
         self.difficulty = difficulty
 
     async def on_submit(self, interaction: discord.Interaction):
+        if RAID_CATEGORY_ID == 0:
+            return await interaction.response.send_message("❌ Error: RAID_CATEGORY_ID not configured in .env", ephemeral=True)
+            
         category = discord.utils.get(interaction.guild.categories, id=RAID_CATEGORY_ID)
-        c_name = f"{self.difficulty.lower()}-{self.raid_name.value.replace(' ', '-')}-{self.raid_date.value}"
+        c_name = f"{self.difficulty.lower()}-{self.raid_name.value.replace(' ', '-')}"
         channel = await interaction.guild.create_text_channel(c_name, category=category)
         
-        embed = discord.Embed(title=f"⚔️ {self.raid_name.value} ({self.difficulty})", color=discord.Color.green(),
-                              description=f"📅 **Datum:** {self.raid_date.value}\n⏰ **Zeit:** {self.raid_time.value}\n📝 **Info:** {self.raid_info.value or 'Keine'}")
-        embed.add_field(name="🛡️ Tank (0)", value="Keine", inline=False)
-        embed.add_field(name="🌿 Heal (0)", value="Keine", inline=False)
-        embed.add_field(name="⚔️ DD (0)", value="Keine", inline=False)
+        embed = discord.Embed(
+            title=f"⚔️ {self.raid_name.value} ({self.difficulty})", 
+            color=discord.Color.green(),
+            description=f"📅 **Date:** {self.raid_date.value}\n⏰ **Time:** {self.raid_time.value}\n📝 **Info:** {self.raid_info.value or 'No extra info'}"
+        )
+        embed.add_field(name="🛡️ Tank (0)", value="None", inline=False)
+        embed.add_field(name="🌿 Heal (0)", value="None", inline=False)
+        embed.add_field(name="⚔️ DD (0)", value="None", inline=False)
         
-        await channel.send("""@everyone""", embed=embed, view=RaidView())
-        await interaction.response.send_message(f"Raid-Channel {channel.mention} erstellt!", ephemeral=True)
+        await channel.send("@everyone", embed=embed, view=RaidView())
+        await interaction.response.send_message(f"Raid channel {channel.mention} created!", ephemeral=True)
 
 class DifficultySelect(ui.Select):
     def __init__(self):
-        super().__init__(placeholder="Schwierigkeit...", options=[
-            discord.SelectOption(label="Normal"), discord.SelectOption(label="Heroisch"), discord.SelectOption(label="Mythisch")
+        super().__init__(placeholder="Choose Difficulty...", options=[
+            discord.SelectOption(label="Normal"), 
+            discord.SelectOption(label="Heroic"), 
+            discord.SelectOption(label="Mythic")
         ])
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.send_modal(RaidDetailModal(self.values[0]))
 
 class AdminControlView(ui.View):
     def __init__(self): super().__init__(timeout=None)
-    @ui.button(label="➕ Neuen Raid planen", style=discord.ButtonStyle.grey, custom_id="raid_bot:admin_setup")
+    @ui.button(label="➕ Plan New Raid", style=discord.ButtonStyle.grey, custom_id="raid_bot:admin_setup")
     async def plan(self, interaction: discord.Interaction, button: ui.Button):
         v = ui.View().add_item(DifficultySelect())
-        await interaction.response.send_message("Schwierigkeit?", view=v, ephemeral=True)
+        await interaction.response.send_message("Select difficulty:", view=v, ephemeral=True)
 
 class RaidBotCog(commands.Cog):
     def __init__(self, bot): self.bot = bot
     @commands.command()
     @commands.has_permissions(administrator=True)
     async def setup_planner(self, ctx):
-        await ctx.send(embed=discord.Embed(title="Raid-Leitung", color=discord.Color.blue()), view=AdminControlView())
+        await ctx.send(embed=discord.Embed(title="Raid Management", color=discord.Color.blue()), view=AdminControlView())
 
 async def setup(bot): await bot.add_cog(RaidBotCog(bot))
