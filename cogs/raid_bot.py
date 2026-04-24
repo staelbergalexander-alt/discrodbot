@@ -6,6 +6,7 @@ import os
 
 # --- KONFIGURATION ---
 RAID_CATEGORY_ID = int(os.getenv('RAID_CATEGORY_ID') or 0)
+# Definition der Klassen mit DEINEN Icons (Leerzeichen am Ende entfernt!)
 WOW_DATA = {
     "Krieger": {"icon": "<:wowwarrior:1493404491045797918>", "Specs": {"Schutz": "🛡️ Tank", "Furor": "⚔️ DD", "Waffen": "⚔️ DD"}},
     "Paladin": {"icon": "<:wowpaladin:1493404654434783232>", "Specs": {"Schutz": "🛡️ Tank", "Heilig": "🌿 Heal", "Vergeltung": "⚔️ DD"}},
@@ -40,68 +41,58 @@ def update_db_signup(channel_id, user_id, name, wow_class=None, spec=None, role=
     conn.close()
     return rows
 
-async def refresh_raid_embed(interaction, all_signups):
-    embed = interaction.message.embeds[0]
-    categories = {"🛡️ Tank": [], "🌿 Heal": [], "⚔️ DD": []}
-    
-    for name, w_class, spec, role in all_signups:
-        class_icon = WOW_DATA.get(w_class, {}).get("icon", "")
-        if role in categories:
-            categories[role].append(f"{class_icon} **{name}** ({spec})")
-
-    embed.clear_fields()
-    for role, members in categories.items():
-        count = len(members)
-        val = "\n".join(members) if members else "Keine"
-        embed.add_field(name=f"{role} ({count})", value=val, inline=False)
-
-    embed.set_footer(text=f"Gesamtanzahl Teilnehmer: {len(all_signups)}")
-    if interaction.response.is_done():
-        await interaction.edit_original_response(view=RaidView()) # Workaround für Doppel-Response
-        await interaction.message.edit(embed=embed)
-    else:
-        await interaction.response.edit_message(embed=embed)
+# --- UI KOMPONENTEN ---
 
 class SpecSelect(ui.Select):
-    def __init__(self, wow_class, options):
-        super().__init__(placeholder=f"Spezialisierung für {wow_class}...", options=options)
+    def __init__(self, wow_class, spec_options):
+        super().__init__(placeholder=f"Spezialisierung für {wow_class}...", options=spec_options)
         self.wow_class = wow_class
 
     async def callback(self, interaction: discord.Interaction):
         spec, role = self.values[0].split("|")
         all_signups = update_db_signup(interaction.channel_id, interaction.user.id, interaction.user.display_name, self.wow_class, spec, role)
         
-        # Das ursprüngliche Raid-Embed suchen und updaten
-        # Wir müssen hier die original_message finden
-        channel = interaction.channel
-        async for message in channel.history(limit=20):
-            if message.author == interaction.client.user and len(message.embeds) > 0:
-                if "Anmeldung" in message.embeds[0].title or "⚔️" in message.embeds[0].title:
-                    categories = {"🛡️ Tank": [], "🌿 Heal": [], "⚔️ DD": []}
-                    for name, w_class, spec_db, role_db in all_signups:
-                        icon = WOW_DATA.get(w_class, {}).get("icon", "")
-                        if role_db in categories:
-                            categories[role_db].append(f"{icon} **{name}** ({spec_db})")
-                    
-                    new_embed = message.embeds[0]
-                    new_embed.clear_fields()
-                    for r, m in categories.items():
-                        new_embed.add_field(name=f"{r} ({len(m)})", value="\n".join(m) if m else "Keine", inline=False)
-                    new_embed.set_footer(text=f"Gesamtanzahl Teilnehmer: {len(all_signups)}")
-                    
-                    await message.edit(embed=new_embed)
-                    await interaction.response.send_message(f"✅ Als {spec} ({self.wow_class}) angemeldet!", ephemeral=True)
-                    return
+        # Embed suchen und updaten
+        embed = interaction.message.reference.cached_message.embeds[0] if interaction.message.reference else None
+        # Falls keine Referenz, suchen wir die letzte Nachricht im Kanal
+        if not embed:
+            async for msg in interaction.channel.history(limit=5):
+                if msg.author == interaction.client.user and msg.embeds:
+                    embed = msg.embeds[0]
+                    target_msg = msg
+                    break
+        
+        categories = {"🛡️ Tank": [], "🌿 Heal": [], "⚔️ DD": []}
+        for name, w_class, s_db, r_db in all_signups:
+            icon = WOW_DATA.get(w_class, {}).get("icon", "")
+            if r_db in categories:
+                categories[r_db].append(f"{icon} **{name}** ({s_db})")
+        
+        embed.clear_fields()
+        for r, m in categories.items():
+            embed.add_field(name=f"{r} ({len(m)})", value="\n".join(m) if m else "Keine", inline=False)
+        embed.set_footer(text=f"Gesamtanzahl Teilnehmer: {len(all_signups)}")
+        
+        await target_msg.edit(embed=embed)
+        await interaction.response.send_message(f"✅ Als {spec} ({self.wow_class}) angemeldet!", ephemeral=True)
 
 class ClassSelect(ui.Select):
     def __init__(self):
-        options = [discord.SelectOption(label=c, emoji=WOW_DATA[c]["icon"]) for c in WOW_DATA.keys()]
+        options = []
+        for name, data in WOW_DATA.items():
+            # Wichtig: Emojis für SelectOptions müssen als discord.PartialEmoji oder String ohne Leerzeichen vorliegen
+            options.append(discord.SelectOption(label=name, emoji=data["icon"].strip()))
+        
         super().__init__(placeholder="Wähle deine Klasse...", options=options, custom_id="raid_bot:class_select")
 
     async def callback(self, interaction: discord.Interaction):
         chosen_class = self.values[0]
-        spec_options = [ui.SelectOption(label=s, value=f"{s}|{r}", description=r) for s, r in WOW_DATA[chosen_class]["Specs"].items()]
-        view = ui.View(); view.add_item(SpecSelect(chosen_class, spec_options))
+        spec_list = []
+        for s, r in WOW_DATA[chosen_class]["Specs"].items():
+            spec_list.append(discord.SelectOption(label=s, value=f"{s}|{r}", description=r))
+        
+        view = ui.View()
+        view.add_item(SpecSelect(chosen_class, spec_list))
         await interaction.response.send_message(f"Welche Spec spielst du als {chosen_class}?", view=view, ephemeral=True)
 
 class RaidView(ui.View):
@@ -112,7 +103,6 @@ class RaidView(ui.View):
     @ui.button(label="Abmelden", style=discord.ButtonStyle.red, custom_id="raid_bot:leave")
     async def leave(self, interaction: discord.Interaction, button: ui.Button):
         all_signups = update_db_signup(interaction.channel_id, interaction.user.id, interaction.user.display_name, None)
-        
         embed = interaction.message.embeds[0]
         categories = {"🛡️ Tank": [], "🌿 Heal": [], "⚔️ DD": []}
         for name, w_class, spec, role in all_signups:
@@ -125,6 +115,8 @@ class RaidView(ui.View):
             embed.add_field(name=f"{r} ({len(m)})", value="\n".join(m) if m else "Keine", inline=False)
         embed.set_footer(text=f"Gesamtanzahl Teilnehmer: {len(all_signups)}")
         await interaction.response.edit_message(embed=embed)
+
+# --- ADMIN / MODAL ---
 
 class RaidDetailModal(ui.Modal, title='Raid Details'):
     raid_name = ui.TextInput(label='Raid Instanz', placeholder='z.B. Palast der Schatten')
@@ -152,27 +144,20 @@ class RaidDetailModal(ui.Modal, title='Raid Details'):
 
 class DifficultySelect(ui.Select):
     def __init__(self):
-        super().__init__(
-            placeholder="Schwierigkeit...", 
-            options=[
-                discord.SelectOption(label="Normal"), 
-                discord.SelectOption(label="Heroisch"), 
-                discord.SelectOption(label="Mythisch")
-            ]
-        )
+        super().__init__(placeholder="Schwierigkeit...", options=[
+            discord.SelectOption(label="Normal"), 
+            discord.SelectOption(label="Heroisch"), 
+            discord.SelectOption(label="Mythisch")
+        ])
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.send_modal(RaidDetailModal(self.values[0]))
 
-# 2. DANACH die Admin-View, die darauf zugreift
 class AdminControlView(ui.View):
-    def __init__(self): 
-        super().__init__(timeout=None)
-
+    def __init__(self): super().__init__(timeout=None)
     @ui.button(label="➕ Neuen Raid planen", style=discord.ButtonStyle.grey, custom_id="raid_bot:admin_setup")
     async def plan(self, interaction: discord.Interaction, button: ui.Button):
-        v = ui.View()
-        v.add_item(DifficultySelect()) # Jetzt kennt Python die Klasse!
-        await interaction.response.send_message("Bitte wähle die Schwierigkeit:", view=v, ephemeral=True)
+        v = ui.View(); v.add_item(DifficultySelect())
+        await interaction.response.send_message("Schwierigkeit?", view=v, ephemeral=True)
 
 class RaidBotCog(commands.Cog):
     def __init__(self, bot): self.bot = bot
