@@ -76,16 +76,7 @@ async def update_raid_message(channel, all_signups):
     embed.set_footer(text=f"Total Participants: {len(all_signups)}")
     await target_msg.edit(embed=embed)
 
-def is_officer():
-    """Check ob User Admin ist ODER die Offizier-Rollen-ID hat"""
-    async def predicate(ctx):
-        if ctx.author.guild_permissions.administrator:
-            return True
-        return any(role.id == OFFIZIER_ROLLE_ID for role in ctx.author.roles)
-    return commands.check(predicate)
-
 def has_officer_perms(interaction: discord.Interaction):
-    """Check für UI Buttons mittels ID"""
     if interaction.user.guild_permissions.administrator:
         return True
     return any(role.id == OFFIZIER_ROLLE_ID for role in interaction.user.roles)
@@ -99,12 +90,17 @@ class RaidDetailModal(ui.Modal):
         self.edit_mode = edit_mode
         self.message = message
         
-        self.raid_name = ui.TextInput(label='Raid Instance', default=self._get_val(0) if edit_mode else 'Nerub-ar Palace')
-        self.raid_date = ui.TextInput(label='Date', default=self._get_val(1) if edit_mode else '2024-11-20')
-        self.raid_time = ui.TextInput(label='Time', default=self._get_val(2) if edit_mode else '19:45')
+        self.raid_name = ui.TextInput(label='Raid Instance', default=self._get_val(0) if edit_mode else 'DR + VOD + QD')
+        self.raid_date = ui.TextInput(label='Date', default=self._get_val(1) if edit_mode else '20.04.2026')
+        self.raid_time = ui.TextInput(label='Time', default=self._get_val(2) if edit_mode else '20:00')
+        self.raid_ping = ui.TextInput(label='Who to ping? (e.g. @Raider)', default='@Raider', required=False)
         self.raid_info = ui.TextInput(label='Extra Info', style=discord.TextStyle.paragraph, required=False, default=self._get_val(3) if edit_mode else '')
         
-        for item in [self.raid_name, self.raid_date, self.raid_time, self.raid_info]: self.add_item(item)
+        # Falls wir editieren, brauchen wir das Ping-Feld eigentlich nicht mehr zwingend
+        items = [self.raid_name, self.raid_date, self.raid_time]
+        if not edit_mode: items.append(self.raid_ping)
+        items.append(self.raid_info)
+        for item in items: self.add_item(item)
 
     def _get_val(self, index):
         try:
@@ -125,13 +121,15 @@ class RaidDetailModal(ui.Modal):
             await interaction.response.send_message("✅ Updated!", ephemeral=True)
         else:
             category = interaction.guild.get_channel(RAID_CATEGORY_ID)
-            if not category:
-                return await interaction.response.send_message("❌ Error: Raid category not found!", ephemeral=True)
+            if not category: return await interaction.response.send_message("❌ Category Error!", ephemeral=True)
                 
             channel = await interaction.guild.create_text_channel(f"{self.difficulty.lower()}-{self.raid_name.value.replace(' ', '-')}", category=category)
             embed = discord.Embed(title=f"⚔️ {self.raid_name.value} ({self.difficulty})", color=discord.Color.green(), description=new_desc)
             for f in ["🛡️ Tank (0)", "🌿 Heal (0)", "⚔️ DD (0)"]: embed.add_field(name=f, value="None", inline=False)
-            await channel.send("""@everyone""", embed=embed, view=RaidView())
+            
+            # Hier wird der Ping aus dem Modal genutzt
+            ping = self.raid_ping.value if self.raid_ping.value else ""
+            await channel.send(ping, embed=embed, view=RaidView())
             await interaction.response.send_message(f"Created {channel.mention}", ephemeral=True)
 
 class SpecSelect(ui.Select):
@@ -160,19 +158,13 @@ class RaidView(ui.View):
 
     @ui.button(label="Late Sign", style=discord.ButtonStyle.secondary, emoji="⏰", custom_id="raid_bot:late")
     async def late(self, interaction: discord.Interaction, button: ui.Button):
-        # Kurzer DB-Check ob User angemeldet ist
-        conn = sqlite3.connect('raid.db')
-        c = conn.cursor()
+        conn = sqlite3.connect('raid.db'); c = conn.cursor()
         c.execute("SELECT 1 FROM signups WHERE channel_id = ? AND user_id = ?", (interaction.channel_id, interaction.user.id))
-        exists = c.fetchone()
-        conn.close()
-        
-        if not exists:
-            return await interaction.response.send_message("❌ Please sign up with a class first!", ephemeral=True)
-
-        all_signups = update_db_signup(interaction.channel_id, interaction.user.id, interaction.user.display_name, is_late=True)
+        exists = c.fetchone(); conn.close()
+        if not exists: return await interaction.response.send_message("❌ Sign up with a class first!", ephemeral=True)
+        all_s = update_db_signup(interaction.channel_id, interaction.user.id, interaction.user.display_name, is_late=True)
         await interaction.response.send_message("⏰ Marked as late.", ephemeral=True)
-        await update_raid_message(interaction.channel, all_signups)
+        await update_raid_message(interaction.channel, all_s)
 
     @ui.button(label="Sign Off", style=discord.ButtonStyle.red, custom_id="raid_bot:leave")
     async def leave(self, interaction: discord.Interaction, button: ui.Button):
@@ -182,11 +174,8 @@ class RaidView(ui.View):
 
     @ui.button(label="⚙️ Edit", style=discord.ButtonStyle.grey, custom_id="raid_bot:edit_raid")
     async def edit(self, interaction: discord.Interaction, button: ui.Button):
-        if not has_officer_perms(interaction):
-            return await interaction.response.send_message("❌ Officers only!", ephemeral=True)
-        diff = "Normal"
-        if interaction.message.embeds[0].title and "(" in interaction.message.embeds[0].title:
-            diff = interaction.message.embeds[0].title.split("(")[1].replace(")", "")
+        if not has_officer_perms(interaction): return await interaction.response.send_message("❌ Officers only!", ephemeral=True)
+        diff = interaction.message.embeds[0].title.split("(")[1].replace(")", "") if "(" in interaction.message.embeds[0].title else "Normal"
         await interaction.response.send_modal(RaidDetailModal(diff, edit_mode=True, message=interaction.message))
 
 class DifficultySelect(ui.Select):
@@ -199,15 +188,15 @@ class AdminControlView(ui.View):
     def __init__(self): super().__init__(timeout=None)
     @ui.button(label="➕ Plan New Raid", style=discord.ButtonStyle.grey, custom_id="raid_bot:admin_setup")
     async def plan(self, interaction: discord.Interaction, button: ui.Button):
-        if not has_officer_perms(interaction):
-            return await interaction.response.send_message("❌ Officers only!", ephemeral=True)
+        if not has_officer_perms(interaction): return await interaction.response.send_message("❌ Officers only!", ephemeral=True)
         await interaction.response.send_message("Difficulty?", view=ui.View().add_item(DifficultySelect()), ephemeral=True)
 
 class RaidBotCog(commands.Cog):
     def __init__(self, bot): self.bot = bot
     @commands.command()
-    @is_officer()
     async def setup_planner(self, ctx):
+        if not any(role.id == OFFIZIER_ROLLE_ID for role in ctx.author.roles) and not ctx.author.guild_permissions.administrator:
+            return await ctx.send("❌ Keine Rechte.")
         await ctx.send(embed=discord.Embed(title="Raid Management", color=discord.Color.blue()), view=AdminControlView())
 
 async def setup(bot): await bot.add_cog(RaidBotCog(bot))
