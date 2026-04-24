@@ -79,21 +79,49 @@ class RaidView(ui.View):
         embed.set_field_at(0, name=f"Teilnehmer ({len(all_signups)})", value=signup_text, inline=False)
         await interaction.response.edit_message(embed=embed)
 
-class RaidDetailModal(ui.Modal, title='Neuen Raid planen'):
+class RaidDetailModal(ui.Modal, title='Raid Details'):
     raid_name = ui.TextInput(label='Raid Instanz', placeholder='z.B. Palast der Schatten')
-    raid_date = ui.TextInput(label='Datum', placeholder='z.B. Mittwoch, 24.05.')
+    raid_date = ui.TextInput(label='Datum', placeholder='z.B. 24-05')
     raid_time = ui.TextInput(label='Uhrzeit', placeholder='19:45 - 22:30 Uhr')
+    raid_info = ui.TextInput(label='Zusatz-Info', placeholder='z.B. Flasks mitbringen!', style=discord.TextStyle.paragraph, required=False)
+
+    def __init__(self, difficulty):
+        super().__init__()
+        self.difficulty = difficulty
 
     async def on_submit(self, interaction: discord.Interaction):
-        category = discord.utils.get(interaction.guild.categories, id=RAID_CATEGORY_ID)
-        channel = await interaction.guild.create_text_channel(f"raid-{self.raid_date.value}", category=category)
+        guild = interaction.guild
+        category = discord.utils.get(guild.categories, id=RAID_CATEGORY_ID)
         
-        embed = discord.Embed(title=f"⚔️ {self.raid_name.value}", color=discord.Color.green(),
-                              description=f"📅 **Datum:** {self.raid_date.value}\n⏰ **Zeit:** {self.raid_time.value}")
+        clean_name = self.raid_name.value.replace(" ", "-").lower()
+        clean_date = self.raid_date.value.replace(".", "-")
+        channel_name = f"{self.difficulty.lower()}-{clean_name}-{clean_date}"
+        
+        channel = await guild.create_text_channel(channel_name, category=category)
+        
+        embed = discord.Embed(
+            title=f"⚔️ {self.raid_name.value} ({self.difficulty})", 
+            color=discord.Color.green(),
+            description=f"📅 **Datum:** {self.raid_date.value}\n⏰ **Zeit:** {self.raid_time.value}\n📝 **Info:** {self.raid_info.value or 'Keine weiteren Infos.'}"
+        )
         embed.add_field(name="Teilnehmer (0)", value="Noch keine Anmeldungen.", inline=False)
         
         await channel.send("@everyone", embed=embed, view=RaidView())
         await interaction.response.send_message(f"Raid-Channel {channel.mention} erstellt!", ephemeral=True)
+
+# Die Schwierigkeits-Auswahl
+class DifficultySelect(ui.Select):
+    def __init__(self):
+        options = [
+            discord.SelectOption(label="Normal", emoji="🟢"),
+            discord.SelectOption(label="Heroisch", emoji="🔵"),
+            discord.SelectOption(label="Mythisch", emoji="🟣")
+        ]
+        super().__init__(placeholder="Wähle die Schwierigkeit...", options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        # Sobald gewählt, öffne das Modal und übergib die Wahl
+        await interaction.response.send_modal(RaidDetailModal(self.values[0]))
 
 class AdminControlView(ui.View):
     def __init__(self):
@@ -101,7 +129,10 @@ class AdminControlView(ui.View):
 
     @ui.button(label="➕ Neuen Raid planen", style=discord.ButtonStyle.grey, custom_id="raid_bot:admin_setup")
     async def plan(self, interaction: discord.Interaction, button: ui.Button):
-        await interaction.response.send_modal(RaidDetailModal())
+        # Hier schicken wir jetzt eine temporäre Nachricht mit dem Dropdown
+        view = ui.View()
+        view.add_item(DifficultySelect())
+        await interaction.response.send_message("Bitte wähle zuerst die Schwierigkeit:", view=view, ephemeral=True)
 
 class RaidBotCog(commands.Cog):
     def __init__(self, bot):
@@ -110,7 +141,7 @@ class RaidBotCog(commands.Cog):
     @commands.command()
     @commands.has_permissions(administrator=True)
     async def setup_planner(self, ctx):
-        embed = discord.Embed(title="🛡️ Raid-Leitung", description="Klicke unten, um einen neuen Raid zu erstellen.", color=discord.Color.blue())
+        embed = discord.Embed(title="🛡️ Raid-Leitung", description="Erstelle hier einen neuen Raid-Termin.", color=discord.Color.blue())
         await ctx.send(embed=embed, view=AdminControlView())
 
 async def setup(bot):
