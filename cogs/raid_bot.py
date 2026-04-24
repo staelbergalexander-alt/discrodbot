@@ -188,6 +188,40 @@ class RaidView(ui.View):
         if not has_officer_perms(interaction): return await interaction.response.send_message("❌ Officers only!", ephemeral=True)
         diff = interaction.message.embeds[0].title.split("(")[1].replace(")", "") if "(" in interaction.message.embeds[0].title else "Normal"
         await interaction.response.send_modal(RaidDetailModal(diff, edit_mode=True, message=interaction.message))
+        
+   @ui.button(label="🔒 Archivieren", style=discord.ButtonStyle.danger, custom_id="raid_bot:archive")
+    async def archive_raid(self, interaction: discord.Interaction, button: ui.Button):
+        if not has_officer_perms(interaction):
+            return await interaction.response.send_message("❌ Nur Offiziere!", ephemeral=True)
+
+        await interaction.response.defer()
+
+        # 1. Buttons entfernen
+        await interaction.message.edit(view=None)
+
+        # 2. Schreibrechte entziehen
+        overwrite = interaction.channel.overwrites_for(interaction.guild.default_role)
+        overwrite.send_messages = False
+        await interaction.channel.set_permissions(interaction.guild.default_role, overwrite=overwrite)
+        
+        # 3. Kanal umbenennen
+        old_name = interaction.channel.name
+        new_name = f"archived-{old_name}" if not old_name.startswith("archived-") else old_name
+        
+        # --- HIER KOMMT DEIN CODE HIN ---
+        # Ersetze 123456789 durch die tatsächliche ID deiner Archiv-Kategorie
+        archive_category_id = 1480283426325270741
+        archive_category = interaction.guild.get_channel(archive_category_id)
+        
+        if archive_category:
+            # Benennt den Kanal um UND verschiebt ihn in die neue Kategorie
+            await interaction.channel.edit(name=new_name, category=archive_category)
+        else:
+            # Nur umbenennen, falls die Kategorie nicht gefunden wurde
+            await interaction.channel.edit(name=new_name)
+        # -------------------------------
+
+        await interaction.followup.send(f"✅ Raid archiviert und nach {archive_category.name if archive_category else 'oben'} verschoben.")
 
 class DifficultySelect(ui.Select):
     def __init__(self):
