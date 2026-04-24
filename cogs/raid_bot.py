@@ -166,7 +166,7 @@ class RaidDetailModal(ui.Modal, title='Raid Details'):
         embed.add_field(name="🌿 Heal (0)", value="None", inline=False)
         embed.add_field(name="⚔️ DD (0)", value="None", inline=False)
         
-        await channel.send("@everyone", embed=embed, view=RaidView())
+        await channel.send("""@everyone""", embed=embed, view=RaidView())
         await interaction.response.send_message(f"Raid channel {channel.mention} created!", ephemeral=True)
 
 class DifficultySelect(ui.Select):
