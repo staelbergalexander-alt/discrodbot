@@ -40,9 +40,19 @@ class ClassSelect(ui.Select):
         super().__init__(placeholder="Wähle deine Klasse...", options=options, custom_id="raid_bot:class_select")
 
     def get_emoji(self, cls):
-        emojis = {"Krieger": "🛡️", "Paladin": "🔨", "Todesritter": "❄️", "Jäger": "🏹", "Schamane": "⚡", 
-                  "Druide": "🍃", "Schurke": "🗡️", "Mönch": "🍺", "Dämonenjäger": "bat", "Rufer": "🦎", 
-                  "Magier": "🔥", "Hexenmeister": "💜", "Priester": "✨"}
+        emojis = {"Krieger": "<:wowwarrior:1493404491045797918>", 
+                  "Paladin": "<:wowpaladin:1493404654434783232>", 
+                  "Todesritter": "<:wowdeathknight:1493404419512074331>", 
+                  "Jäger": "<:wowhunter:1493404509945462906>", 
+                  "Schamane": "<:wowshaman:1493404277748797470>",                  
+                  "Druide": "<:wowdruid:1493404330420604999>", 
+                  "Schurke": "<:wowrogue:1493404583534268517>", 
+                  "Mönch": "<:wowmonk:1493404364281217165>", 
+                  "Dämonenjäger": "<:wowdemonhunter:1493404389065359390>", 
+                  "Rufer": "<:evokerroundpng:1497024873011351672>", 
+                  "Magier": "<:wowmage:1493404551968063519>", 
+                  "Hexenmeister": "<:wowwarlock:1493404636370046996> ", 
+                  "Priester": "<:wowpriest:1493404618141470801> "}
         return emojis.get(cls, "❓")
 
     async def callback(self, interaction: discord.Interaction):
