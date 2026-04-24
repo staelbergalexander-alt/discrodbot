@@ -84,22 +84,19 @@ def has_officer_perms(interaction: discord.Interaction):
 # --- UI ---
 
 class RaidDetailModal(ui.Modal):
-    def __init__(self, difficulty, edit_mode=False, message=None):
+    def __init__(self, difficulty, edit_mode=False, message=None, ping_val=""):
         super().__init__(title='Edit Raid' if edit_mode else 'New Raid')
         self.difficulty = difficulty
         self.edit_mode = edit_mode
         self.message = message
+        self.ping_val = ping_val # Speichert die Mentions aus dem Dropdown
         
         self.raid_name = ui.TextInput(label='Raid Instance', default=self._get_val(0) if edit_mode else 'DR + VOD + QD')
         self.raid_date = ui.TextInput(label='Date', default=self._get_val(1) if edit_mode else '20.04.2026')
         self.raid_time = ui.TextInput(label='Time', default=self._get_val(2) if edit_mode else '20:00')
-        self.raid_ping = ui.TextInput(label='Who to ping? (e.g. @Raider)', default='@Raider', required=False)
         self.raid_info = ui.TextInput(label='Extra Info', style=discord.TextStyle.paragraph, required=False, default=self._get_val(3) if edit_mode else '')
         
-        # Falls wir editieren, brauchen wir das Ping-Feld eigentlich nicht mehr zwingend
-        items = [self.raid_name, self.raid_date, self.raid_time]
-        if not edit_mode: items.append(self.raid_ping)
-        items.append(self.raid_info)
+        items = [self.raid_name, self.raid_date, self.raid_time, self.raid_info]
         for item in items: self.add_item(item)
 
     def _get_val(self, index):
@@ -113,6 +110,7 @@ class RaidDetailModal(ui.Modal):
 
     async def on_submit(self, interaction: discord.Interaction):
         new_desc = f"📅 **Date:** {self.raid_date.value}\n⏰ **Time:** {self.raid_time.value}\n📝 **Info:** {self.raid_info.value or 'None'}"
+        
         if self.edit_mode:
             embed = self.message.embeds[0]
             embed.title = f"⚔️ {self.raid_name.value} ({self.difficulty})"
@@ -122,15 +120,28 @@ class RaidDetailModal(ui.Modal):
         else:
             category = interaction.guild.get_channel(RAID_CATEGORY_ID)
             if not category: return await interaction.response.send_message("❌ Category Error!", ephemeral=True)
-                
-            channel = await interaction.guild.create_text_channel(f"{self.difficulty.lower()}-{self.raid_name.value.replace(' ', '-')}", category=category)
-            embed = discord.Embed(title=f"⚔️ {self.raid_name.value} ({self.difficulty})", color=discord.Color.green(), description=new_desc)
-            for f in ["🛡️ Tank (0)", "🌿 Heal (0)", "⚔️ DD (0)"]: embed.add_field(name=f, value="None", inline=False)
             
-            # Hier wird der Ping aus dem Modal genutzt
-            ping = self.raid_ping.value if self.raid_ping.value else ""
-            await channel.send(ping, embed=embed, view=RaidView())
+            clean_name = self.raid_name.value.replace(' ', '-')
+            channel_name = f"{self.raid_date.value}-{self.difficulty.lower()}-{clean_name}"
+            
+            channel = await interaction.guild.create_text_channel(channel_name, category=category)
+
+            embed = discord.Embed(title=f"⚔️ {self.raid_name.value} ({self.difficulty})", color=discord.Color.green(), description=new_desc)
+            for f in ["🛡️ Tank (0)", "🌿 Heal (0)", "⚔️ DD (0)"]: 
+                embed.add_field(name=f, value="None", inline=False)
+            
+            await channel.send(self.ping_val, embed=embed, view=RaidView())
             await interaction.response.send_message(f"Created {channel.mention}", ephemeral=True)
+
+class RoleSelectView(ui.View):
+    def __init__(self, difficulty):
+        super().__init__(timeout=None)
+        self.difficulty = difficulty
+
+    @ui.select(cls=ui.RoleSelect, placeholder="Welche Rollen pingen?", min_values=1, max_values=5)
+    async def select_roles(self, interaction: discord.Interaction, select: ui.RoleSelect):
+        pings = " ".join([role.mention for role in select.values])
+        await interaction.response.send_modal(RaidDetailModal(self.difficulty, ping_val=pings))
 
 class SpecSelect(ui.Select):
     def __init__(self, wow_class, spec_options):
@@ -182,7 +193,8 @@ class DifficultySelect(ui.Select):
     def __init__(self):
         super().__init__(placeholder="Difficulty...", options=[discord.SelectOption(label=x) for x in ["Normal", "Heroic", "Mythic"]])
     async def callback(self, interaction: discord.Interaction):
-        await interaction.response.send_modal(RaidDetailModal(self.values[0]))
+        # Zeigt erst das Rollen-Dropdown
+        await interaction.response.send_message("Welche Rollen sollen gepingt werden?", view=RoleSelectView(self.values[0]), ephemeral=True)
 
 class AdminControlView(ui.View):
     def __init__(self): super().__init__(timeout=None)
