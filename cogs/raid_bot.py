@@ -150,18 +150,29 @@ class RaidDetailModal(ui.Modal, title='Raid Details'):
         await channel.send("@everyone", embed=embed, view=RaidView())
         await interaction.response.send_message(f"Raid-Channel {channel.mention} erstellt!", ephemeral=True)
 
-class AdminControlView(ui.View):
-    def __init__(self): super().__init__(timeout=None)
-    @ui.button(label="➕ Neuen Raid planen", style=discord.ButtonStyle.grey, custom_id="raid_bot:admin_setup")
-    async def plan(self, interaction: discord.Interaction, button: ui.Button):
-        v = ui.View(); v.add_item(DifficultySelect())
-        await interaction.response.send_message("Schwierigkeit?", view=v, ephemeral=True)
-
 class DifficultySelect(ui.Select):
     def __init__(self):
-        super().__init__(placeholder="Schwierigkeit...", options=[ui.SelectOption(label="Normal"), ui.SelectOption(label="Heroisch"), ui.SelectOption(label="Mythisch")])
+        super().__init__(
+            placeholder="Schwierigkeit...", 
+            options=[
+                discord.SelectOption(label="Normal"), 
+                discord.SelectOption(label="Heroisch"), 
+                discord.SelectOption(label="Mythisch")
+            ]
+        )
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.send_modal(RaidDetailModal(self.values[0]))
+
+# 2. DANACH die Admin-View, die darauf zugreift
+class AdminControlView(ui.View):
+    def __init__(self): 
+        super().__init__(timeout=None)
+
+    @ui.button(label="➕ Neuen Raid planen", style=discord.ButtonStyle.grey, custom_id="raid_bot:admin_setup")
+    async def plan(self, interaction: discord.Interaction, button: ui.Button):
+        v = ui.View()
+        v.add_item(DifficultySelect()) # Jetzt kennt Python die Klasse!
+        await interaction.response.send_message("Bitte wähle die Schwierigkeit:", view=v, ephemeral=True)
 
 class RaidBotCog(commands.Cog):
     def __init__(self, bot): self.bot = bot
