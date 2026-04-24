@@ -106,7 +106,7 @@ class RaidDetailModal(ui.Modal, title='Raid Details'):
         )
         embed.add_field(name="Teilnehmer (0)", value="Noch keine Anmeldungen.", inline=False)
         
-        await channel.send("@everyone", embed=embed, view=RaidView())
+        await channel.send("@Offizier", embed=embed, view=RaidView())
         await interaction.response.send_message(f"Raid-Channel {channel.mention} erstellt!", ephemeral=True)
 
 # Die Schwierigkeits-Auswahl
