@@ -3,6 +3,7 @@ import json
 import discord
 import asyncio
 import aiohttp
+import urllib.parse
 import re
 from quart import Quart, render_template_string, redirect, url_for, request
 from datetime import datetime
@@ -30,13 +31,21 @@ def parse_rio_link(link):
         return name, realm
     return None, None
 
-async def fetch_char_data(name, realm):
+aasync def fetch_char_data(name, realm):
+    # Entfernt Leerzeichen und sorgt für Kleinschreibung
     clean_name = name.strip().lower()
     clean_realm = realm.strip().lower().replace(" ", "-")
-    url = f"https://raider.io/api/v1/characters/profile?region=eu&realm={clean_realm}&name={clean_name}&fields=gear"
+    
+    # URL-Kodierung für Sonderzeichen (wie î, â, ô)
+    # Das macht aus 'mîsîkôvâ' -> 'm%C3%AEs%C3%AEk%C3%B4v%C3%A2'
+    safe_name = urllib.parse.quote(clean_name)
+    safe_realm = urllib.parse.quote(clean_realm)
+    
+    url = f"https://raider.io/api/v1/characters/profile?region=eu&realm={safe_realm}&name={safe_name}&fields=gear"
+    
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=3) as response:
+            async with session.get(url, timeout=5) as response:
                 if response.status == 200:
                     data = await response.json()
                     return {
@@ -45,7 +54,11 @@ async def fetch_char_data(name, realm):
                         "spec": data.get('active_spec_name', 'Unbekannt'),
                         "rio_url": f"https://raider.io/characters/eu/{clean_realm}/{clean_name}"
                     }
-    except: pass
+                else:
+                    print(f"Raider.io API Fehler: {response.status} für {clean_name}")
+    except Exception as e:
+        print(f"Fehler beim Abrufen von RIO: {e}")
+        
     return {"ilvl": "??", "class": "Unbekannt", "spec": "Unbekannt", "rio_url": f"https://raider.io/characters/eu/{clean_realm}/{clean_name}"}
 
 # --- DISCORD INTERAKTION ---
