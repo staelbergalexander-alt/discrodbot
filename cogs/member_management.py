@@ -39,7 +39,7 @@ class MemberManagement(commands.Cog):
     @app_commands.command(name="twink_add_rio", description="Fügt einen Twink per Raider.io Link hinzu")
     @app_commands.describe(
         main_id="Die Discord ID des Hauptaccounts",
-        twink_id="Die Discord ID des Twink-Accounts",
+        twink_id=main_id,
         rio_url="Der komplette Raider.io Link des Twinks"
     )
     @app_commands.checks.has_permissions(administrator=True)
