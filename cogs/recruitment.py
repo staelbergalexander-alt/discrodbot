@@ -19,7 +19,6 @@ from config import (
 )
 
 # --- MODAL FÜR ABLEHNUNGS-BEGRÜNDUNG ---
-
 class DeclineReasonModal(discord.ui.Modal, title='Bewerbung ablehnen'):
     reason = discord.ui.TextInput(label='Begründung', style=discord.TextStyle.paragraph, required=True)
 
@@ -52,7 +51,6 @@ class DeclineReasonModal(discord.ui.Modal, title='Bewerbung ablehnen'):
             await interaction.channel.edit(name=f"❌ ABGELEHNT - {interaction.channel.name}", archived=True, locked=True)
 
 # --- VIEWS FÜR DIE BUTTONS ---
-
 class ThreadActionView(discord.ui.View):
     def __init__(self, member_id=None):
         super().__init__(timeout=None)
@@ -104,7 +102,6 @@ class GildenLeitungView(discord.ui.View):
         await interaction.response.send_modal(SuperQuickModal(self.cog))
 
 # --- MODAL FÜR DEN EINTRAG ---
-
 class SuperQuickModal(discord.ui.Modal, title='Neuer Gilden-Eintrag'):
     rio_link = discord.ui.TextInput(label='Raider.io Link', placeholder='Link einfügen...', required=True)
     real_name = discord.ui.TextInput(label='Vorname / Spielername', placeholder='z.B. Alex', required=True)
@@ -116,10 +113,9 @@ class SuperQuickModal(discord.ui.Modal, title='Neuer Gilden-Eintrag'):
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.send_message("⌛ Daten werden abgerufen...", ephemeral=True)
         
-        # Aktuelles Datum für den Eintritt
         join_date = datetime.now().strftime("%d.%m.%Y")
         
-        # 1. Sonderzeichen-Handling (URL Decoding)
+        # 1. URL DECODING (Fix für Sonderzeichen wie Misikôvâ)
         decoded_url = urllib.parse.unquote(self.rio_link.value)
         match = re.search(r'characters/eu/([^/]+)/([^/]+)', decoded_url.lower())
         
@@ -161,42 +157,12 @@ class SuperQuickModal(discord.ui.Modal, title='Neuer Gilden-Eintrag'):
             member = interaction.guild.get_member(int(uid))
             
             if member:
-                # Rollen & Nickname
-                b_role = interaction.guild.get_role(BEWERBER_ROLLE_ID)
-                g_role = interaction.guild.get_role(GAST_ROLLE_ID)
-                try:
-                    if b_role: await member.add_roles(b_role)
-                    if g_role: await member.remove_roles(g_role)
-                    new_nick = f"{final_name} | {self.real_name.value}"[:32]
-                    await member.edit(nick=new_nick)
-                except:
-                    pass
-                
-                # 3. Datenbank Speicherung (Inkl. Eintrittsdatum)
-                if not os.path.exists(DB_FILE):
-                    os.makedirs(os.path.dirname(DB_FILE), exist_ok=True)
-                    with open(DB_FILE, "w", encoding="utf-8") as f:
-                        json.dump({}, f)
-                
-                with open(DB_FILE, "r", encoding="utf-8") as f:
-                    try: db_data = json.load(f)
-                    except: db_data = {}
-                
-                # Datenstruktur erweitern
-                db_data[str(member.id)] = {
-                    "chars": [{"name": final_name, "realm": final_srv}],
-                    "join_date": join_date,
-                    "real_name": self.real_name.value
-                }
-                
-                with open(DB_FILE, "w", encoding="utf-8") as f:
-                    json.dump(db_data, f, indent=4, ensure_ascii=False)
-                
-                # Forum Thread erstellen
+                # 2. Forum Thread erstellen (BEVOR wir in die DB speichern, damit wir die ID haben)
                 forum = interaction.guild.get_channel(FORUM_CHANNEL_ID)
+                thread_id = None
+                
                 if forum:
                     thread_title = f"[{char_class}] {final_name} | {self.real_name.value}"[:100]
-                    
                     embed = discord.Embed(
                         title=f"🛡️ Neuer Eintrag: {final_name}", 
                         color=discord.Color.blue(), 
@@ -213,13 +179,48 @@ class SuperQuickModal(discord.ui.Modal, title='Neuer Gilden-Eintrag'):
                     )
 
                     thread_data = await forum.create_thread(name=thread_title, embed=embed)
+                    thread_id = thread_data.thread.id # Die ID speichern!
+                    
                     await thread_data.thread.send(
                         content=f"💡 Entscheidung für {member.mention}:", 
                         view=ThreadActionView(member.id)
                     )
+
+                # 3. Datenbank Speicherung (Jetzt mit thread_id!)
+                if not os.path.exists(DB_FILE):
+                    os.makedirs(os.path.dirname(DB_FILE), exist_ok=True)
+                    with open(DB_FILE, "w", encoding="utf-8") as f:
+                        json.dump({}, f)
+                
+                with open(DB_FILE, "r", encoding="utf-8") as f:
+                    try: db_data = json.load(f)
+                    except: db_data = {}
+                
+                # WICHTIG: Flache Struktur ohne "members"-Key (Dashboard-kompatibel)
+                db_data[str(member.id)] = {
+                    "chars": [{"name": final_name, "realm": final_srv}],
+                    "join_date": join_date,
+                    "real_name": self.real_name.value,
+                    "thread_id": thread_id # Wird für Dashboard-Updates benötigt
+                }
+                
+                with open(DB_FILE, "w", encoding="utf-8") as f:
+                    json.dump(db_data, f, indent=4, ensure_ascii=False)
+
+                # Rollen & Nickname
+                try:
+                    b_role = interaction.guild.get_role(BEWERBER_ROLLE_ID)
+                    g_role = interaction.guild.get_role(GAST_ROLLE_ID)
+                    if b_role: await member.add_roles(b_role)
+                    if g_role: await member.remove_roles(g_role)
+                    new_nick = f"{final_name} | {self.real_name.value}"[:32]
+                    await member.edit(nick=new_nick)
+                except:
+                    pass
             
             await prompt.delete()
             await msg.delete()
+            await interaction.followup.send(f"✅ **{final_name}** erfolgreich eingetragen!", ephemeral=True)
             
         except asyncio.TimeoutError:
             await interaction.followup.send("❌ Zeit abgelaufen.", ephemeral=True)
@@ -228,7 +229,6 @@ class SuperQuickModal(discord.ui.Modal, title='Neuer Gilden-Eintrag'):
             await interaction.followup.send(f"❌ Fehler: {e}", ephemeral=True)
 
 # --- COG KLASSE ---
-
 class Recruitment(commands.Cog):
     def __init__(self, bot):
         self.bot = bot

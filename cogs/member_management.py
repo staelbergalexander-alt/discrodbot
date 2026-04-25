@@ -3,6 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 import json
 import os
+import urllib.parse # WICHTIG: Oben bei den Imports hinzufügen!
 import re
 import aiohttp
 from datetime import datetime
@@ -31,16 +32,20 @@ class MemberManagement(commands.Cog):
         with open(self.db_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4, ensure_ascii=False)
             
-    def parse_raiderio_url(self, url):
-        """Extrahiert Name und Server aus einem Raider.io Link."""
-        match = re.search(r"characters/(?P<region>\w+)/(?P<realm>[\w-]+)/(?P<name>[\w-]+)", url)
-        if match:
-            return {
-                "name": match.group("name"),
-                "realm": match.group("realm"),
-                "region": match.group("region")
-            }
-        return None
+   def parse_raiderio_url(self, url):
+    """Extrahiert Name und Server und decodiert Sonderzeichen."""
+    # Zuerst die URL von %C3% etc. befreien
+    decoded_url = urllib.parse.unquote(url)
+    
+    # RegEx für die Struktur
+    match = re.search(r"characters/(?P<region>\w+)/(?P<realm>[\w-]+)/(?P<name>[\w-]+)", decoded_url)
+    if match:
+        return {
+            "name": match.group("name"),
+            "realm": match.group("realm"),
+            "region": match.group("region")
+        }
+    return None
 
     @app_commands.command(name="twink_add_rio", description="Fügt einen weiteren Charakter zum Profil hinzu")
     @app_commands.describe(
