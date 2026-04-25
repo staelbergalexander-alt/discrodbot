@@ -32,12 +32,9 @@ def parse_rio_link(link):
     return None, None
 
 async def fetch_char_data(name, realm):
-    # Entfernt Leerzeichen und sorgt für Kleinschreibung
     clean_name = name.strip().lower()
     clean_realm = realm.strip().lower().replace(" ", "-")
     
-    # URL-Kodierung für Sonderzeichen (wie î, â, ô)
-    # Das macht aus 'mîsîkôvâ' -> 'm%C3%AEs%C3%AEk%C3%B4v%C3%A2'
     safe_name = urllib.parse.quote(clean_name)
     safe_realm = urllib.parse.quote(clean_realm)
     
@@ -54,8 +51,6 @@ async def fetch_char_data(name, realm):
                         "spec": data.get('active_spec_name', 'Unbekannt'),
                         "rio_url": f"https://raider.io/characters/eu/{clean_realm}/{clean_name}"
                     }
-                else:
-                    print(f"Raider.io API Fehler: {response.status} für {clean_name}")
     except Exception as e:
         print(f"Fehler beim Abrufen von RIO: {e}")
         
@@ -66,7 +61,6 @@ async def fetch_char_data(name, realm):
 class ActionButtons(discord.ui.View):
     def __init__(self, applicant_id=None, char_name=None):
         super().__init__(timeout=None)
-        # Säuberung der ID falls sie als String mit <@... landet
         self.applicant_id = int(re.sub(r'[^0-9]', '', str(applicant_id)))
         self.char_name = char_name
 
@@ -96,7 +90,6 @@ async def index():
     guild = bot_instance.get_guild(SERVER_ID) if bot_instance and bot_instance.is_ready() else None
 
     for uid, user_data in members_data.items():
-        # Reparatur-Logik für IDs mit <@...
         clean_uid = re.sub(r'[^0-9]', '', str(uid))
         role_info = {"name": "Gast", "color": "slate", "priority": 4}
         display_name = f"User {clean_uid}"
@@ -195,7 +188,6 @@ async def index():
                     <div>
                         <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Discord ID (Besitzer)</label>
                         <input name="new_uid" id="display_uid" class="w-full bg-slate-950 border border-slate-700 px-4 py-2 rounded-xl text-indigo-400 font-mono outline-none focus:border-indigo-500">
-                        <p class="text-[9px] text-slate-500 mt-1">Ändere die ID, um den Char einem anderen User zuzuweisen.</p>
                     </div>
                     <div class="grid grid-cols-2 gap-4">
                         <div>
@@ -244,6 +236,7 @@ async def add_applicant():
     if not name: return redirect('/')
     data = await fetch_char_data(name, realm)
     
+    thread_id = None
     if bot_instance and bot_instance.is_ready():
         try:
             guild = bot_instance.get_guild(SERVER_ID)
@@ -258,16 +251,74 @@ async def add_applicant():
                 embed = discord.Embed(title=f"🛡️ Neue Bewerbung: {name}", color=0x3498db, timestamp=datetime.now())
                 embed.add_field(name="Charakter", value=f"**{name}** - {data['class']} ({data['spec']})", inline=False)
                 view = ActionButtons(discord_id, name)
-                await forum_channel.create_thread(name=f"Bewerbung: {name}", embeds=[embed], view=view)
+                thread = await forum_channel.create_thread(name=f"Bewerbung: {name}", embeds=[embed], view=view)
+                thread_id = str(thread.thread.id)
         except: pass
 
     with open(DB_FILE, "r+", encoding="utf-8") as f:
         try: db = json.load(f)
         except: db = {}
-        if discord_id not in db: db[discord_id] = {"chars": []}
+        if discord_id not in db: db[discord_id] = {"chars": [], "thread_id": thread_id}
         if not any(c['name'].lower() == name.lower() for c in db[discord_id]["chars"]):
             db[discord_id]["chars"].append({"name": name, "realm": realm})
         f.seek(0); json.dump(db, f, indent=4, ensure_ascii=False); f.truncate()
+    return redirect('/')
+
+@app.route('/edit_char', methods=['POST'])
+async def edit_char():
+    form = await request.form
+    old_uid = form.get('old_uid')
+    new_uid = re.sub(r'[^0-9]', '', form.get('new_uid', '').strip())
+    idx = int(form.get('char_idx'))
+    new_name = form.get('new_name', '').strip()
+    new_realm = form.get('new_realm', '').strip()
+
+    if os.path.exists(DB_FILE) and new_uid:
+        with open(DB_FILE, "r", encoding="utf-8") as f:
+            try: db = json.load(f)
+            except: db = {}
+        
+        clean_old_uid = re.sub(r'[^0-9]', '', str(old_uid))
+        actual_old_key = old_uid if old_uid in db else next((k for k in db if re.sub(r'[^0-9]', '', str(k)) == clean_old_uid), None)
+
+        if actual_old_key and 0 <= idx < len(db[actual_old_key]["chars"]):
+            char_data = db[actual_old_key]["chars"].pop(idx)
+            char_data["name"] = new_name
+            char_data["realm"] = new_realm
+            
+            # WICHTIG: Thread-ID für Discord Update merken
+            thread_id = db[actual_old_key].get("thread_id")
+
+            if not db[actual_old_key]["chars"]:
+                del db[actual_old_key]
+
+            if new_uid not in db:
+                db[new_uid] = {"chars": [], "thread_id": thread_id}
+            
+            if not any(c['name'].lower() == new_name.lower() for c in db[new_uid]["chars"]):
+                db[new_uid]["chars"].append(char_data)
+            
+            with open(DB_FILE, "w", encoding="utf-8") as f:
+                json.dump(db, f, indent=4, ensure_ascii=False)
+
+            # --- DISCORD UPDATE ---
+            if bot_instance and bot_instance.is_ready() and thread_id:
+                try:
+                    thread = bot_instance.get_channel(int(thread_id))
+                    if thread:
+                        live = await fetch_char_data(new_name, new_realm)
+                        async for message in thread.history(limit=5, oldest_first=True):
+                            if message.author == bot_instance.user and message.embeds:
+                                embed = discord.Embed(title=f"🛡️ Eintrag: {new_name}", color=0x3498db, timestamp=datetime.now())
+                                embed.add_field(name="Charakter", value=f"**{new_name}** - {live['class']} ({live['spec']})", inline=False)
+                                embed.add_field(name="Server", value=new_realm.capitalize(), inline=True)
+                                embed.add_field(name="iLvl", value=live['ilvl'], inline=True)
+                                embed.add_field(name="Links", value=f"[Raider.io]({live['rio_url']})", inline=False)
+                                await message.edit(embed=embed)
+                                await thread.edit(name=f"Eintrag: {new_name}")
+                                break
+                except: pass
+                
     return redirect('/')
 
 @app.route('/delete/<uid>/<int:char_idx>')
@@ -277,10 +328,7 @@ async def delete_char(uid, char_idx):
         with open(DB_FILE, "r", encoding="utf-8") as f:
             try: db = json.load(f)
             except: db = {}
-        
-        # Kaputte Keys finden (mit <@)
         actual_key = uid if uid in db else next((k for k in db if re.sub(r'[^0-9]', '', str(k)) == clean_uid), None)
-        
         if actual_key and 0 <= char_idx < len(db[actual_key]["chars"]):
             db[actual_key]["chars"].pop(char_idx)
             if not db[actual_key]["chars"]: del db[actual_key]
@@ -314,43 +362,6 @@ async def full_delete(uid):
             del db[uid]
             with open(DB_FILE, "w", encoding="utf-8") as f:
                 json.dump(db, f, indent=4, ensure_ascii=False)
-    return redirect('/')
-
-@app.route('/edit_char', methods=['POST'])
-async def edit_char():
-    form = await request.form
-    old_uid = form.get('old_uid')
-    new_uid = re.sub(r'[^0-9]', '', form.get('new_uid', '').strip())
-    idx = int(form.get('char_idx'))
-    new_name = form.get('new_name', '').strip()
-    new_realm = form.get('new_realm', '').strip()
-
-    if os.path.exists(DB_FILE) and new_uid:
-        with open(DB_FILE, "r", encoding="utf-8") as f:
-            try: db = json.load(f)
-            except: db = {}
-        
-        # Erkennt sowohl saubere als auch kaputte (mit <@) IDs als Ursprung
-        clean_old_uid = re.sub(r'[^0-9]', '', str(old_uid))
-        actual_old_key = old_uid if old_uid in db else next((k for k in db if re.sub(r'[^0-9]', '', str(k)) == clean_old_uid), None)
-
-        if actual_old_key and 0 <= idx < len(db[actual_old_key]["chars"]):
-            char_data = db[actual_old_key]["chars"].pop(idx)
-            char_data["name"] = new_name
-            char_data["realm"] = new_realm
-
-            if not db[actual_old_key]["chars"]:
-                del db[actual_old_key]
-
-            if new_uid not in db:
-                db[new_uid] = {"chars": []}
-            
-            if not any(c['name'].lower() == new_name.lower() for c in db[new_uid]["chars"]):
-                db[new_uid]["chars"].append(char_data)
-            
-            with open(DB_FILE, "w", encoding="utf-8") as f:
-                json.dump(db, f, indent=4, ensure_ascii=False)
-                
     return redirect('/')
 
 async def run_web(bot=None):
