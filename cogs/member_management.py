@@ -36,48 +36,47 @@ class MemberManagement(commands.Cog):
             }
         return None
 
-    @app_commands.command(name="twink_add_rio", description="Fügt einen Twink per Raider.io Link hinzu")
+    @app_commands.command(name="twink_add_rio", description="Fügt einen weiteren Charakter (Twink) zum Profil hinzu")
     @app_commands.describe(
-        main_id="Die Discord ID des Hauptaccounts",
-        twink_id=main_id,
-        rio_url="Der komplette Raider.io Link des Twinks"
+        main_id="Die Discord ID des Besitzers",
+        rio_url="Der komplette Raider.io Link des neuen Charakters"
     )
     @app_commands.checks.has_permissions(administrator=True)
-    async def twink_add_rio(self, interaction: discord.Interaction, main_id: str, twink_id: str, rio_url: str):
+    async def twink_add_rio(self, interaction: discord.Interaction, main_id: str, rio_url: str):
         data = self.load_data()
         
         char_info = self.parse_raiderio_url(rio_url)
         if not char_info:
             return await interaction.response.send_message("❌ Ungültiger Raider.io Link!", ephemeral=True)
 
-        # Sicherstellen, dass Main-Eintrag existiert
+        # 1. Sicherstellen, dass der User-Eintrag existiert
         if main_id not in data["members"]:
             data["members"][main_id] = {
                 "name": "Unbekannt", 
                 "status": "Aktiv", 
-                "twinks": [], 
+                "chars": [], # Wir nutzen eine Liste für alle Charaktere dieses Users
                 "is_twink": False
             }
 
-        # Twink-Daten strukturieren
-        data["members"][twink_id] = {
-            "name": char_info["name"],
-            "realm": char_info["realm"],
-            "rio_url": rio_url,
-            "status": "Aktiv",
-            "is_twink": True,
-            "main_account_id": main_id,
-            "twinks": []
-        }
+        # Falls das alte Format (ohne "chars" Liste) vorliegt, fixen wir das hier kurz
+        if "chars" not in data["members"][main_id]:
+            data["members"][main_id]["chars"] = []
 
-        # Beim Main registrieren
-        if twink_id not in data["members"][main_id]["twinks"]:
-            data["members"][main_id]["twinks"].append(twink_id)
-
-        self.save_data(data)
-        await interaction.response.send_message(
-            f"✅ **{char_info['name']}** ({char_info['realm']}) wurde als Twink gespeichert und verknüpft!"
-        )
+        # 2. Prüfen, ob der Charakter schon existiert, um Dubletten zu vermeiden
+        exists = any(c['rio_url'] == rio_url for c in data["members"][main_id]["chars"])
+        
+        if not exists:
+            data["members"][main_id]["chars"].append({
+                "name": char_info["name"],
+                "realm": char_info["realm"],
+                "rio_url": rio_url
+            })
+            self.save_data(data)
+            await interaction.response.send_message(
+                f"✅ **{char_info['name']}** wurde dem Profil von ID `{main_id}` hinzugefügt."
+            )
+        else:
+            await interaction.response.send_message("⚠️ Dieser Charakter ist bereits für diesen User registriert.", ephemeral=True)
 
     @app_commands.command(name="member_remove", description="Löscht einen Member komplett aus der DB")
     @app_commands.checks.has_permissions(administrator=True)
