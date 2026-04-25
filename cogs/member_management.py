@@ -32,7 +32,7 @@ class MemberManagement(commands.Cog):
         with open(self.db_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4, ensure_ascii=False)
             
-   def parse_raiderio_url(self, url):
+    def parse_raiderio_url(self, url):
     """Extrahiert Name und Server und decodiert Sonderzeichen."""
     # Zuerst die URL von %C3% etc. befreien
     decoded_url = urllib.parse.unquote(url)
