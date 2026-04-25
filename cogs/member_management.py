@@ -97,32 +97,52 @@ class MemberManagement(commands.Cog):
         if not forum:
             return
 
+        # Wir müssen den Thread finden. In deiner aktuellen Struktur haben wir keine thread_id.
+        # Wir suchen daher nach einem Thread, der den Namen des Spielers oder die ID im Titel hat.
+        # Besser: Wir suchen den Thread, den der Bot zuletzt für diesen User erstellt hat.
+        
+        target_thread = None
         real_name = user_data.get("real_name", "Unbekannt")
-        join_date = datetime.now().strftime("%d.%m.%Y")
         
-        wcl_link = f"https://www.warcraftlogs.com/character/eu/{char_info['realm']}/{char_info['name']}"
-        rio_link = f"https://raider.io/characters/eu/{char_info['realm']}/{char_info['name']}"
-
-        embed = discord.Embed(
-            title=f"🛡️ Neuer Twink: {char_info['name']}", 
-            color=discord.Color.blue(),
-            timestamp=datetime.now()
-        )
-        embed.add_field(name="Klasse", value=char_class, inline=True)
-        embed.add_field(name="Spieler", value=real_name, inline=True)
-        embed.add_field(name="Server", value=char_info['realm'].capitalize(), inline=False)
-        embed.add_field(name="Eintrittsdatum", value=join_date, inline=True)
-        embed.add_field(
-            name="Links", 
-            value=f"[Raider.io]({rio_link}) | [WarcraftLogs]({wcl_link})", 
-            inline=False
-        )
+        # Suche in den aktiven Threads des Forums
+        for thread in forum.threads:
+            if str(member_id) in thread.name or real_name in thread.name:
+                target_thread = thread
+                break
         
-        owner = interaction.guild.get_member(int(member_id))
-        footer_text = f"Twink von {owner.display_name}" if owner else f"Twink von ID {member_id}"
-        embed.set_footer(text=footer_text)
+        if not target_thread:
+            # Falls kein Thread gefunden wurde, erstelle einen neuen (Fallbacksicherung)
+            target_thread = await forum.create_thread(name=f"Eintrag: {real_name} | {member_id}", content="Initialer Post")
 
-        await forum.create_thread(name=f"Twink: {char_info['name']} | {real_name}", embed=embed)
+        # Hole die erste Nachricht im Thread (das Embed)
+        async for message in target_thread.history(limit=1, oldest_first=True):
+            if message.author == self.bot.user and message.embeds:
+                old_embed = message.embeds[0]
+                
+                # Prüfen, ob das Twink-Feld schon existiert, sonst neu anlegen
+                twink_list = []
+                for field in old_embed.fields:
+                    if field.name == "Twinks":
+                        twink_list = [field.value]
+                
+                new_twink_entry = f"• **{char_info['name']}** ({char_class}) - [RIO]({f'https://raider.io/characters/eu/{char_info['realm']}/{char_info['name']}'})"
+                
+                # Falls das Feld "Twinks" noch nicht da ist, fügen wir es hinzu
+                found = False
+                new_fields = []
+                for field in old_embed.fields:
+                    if field.name == "Twinks":
+                        new_fields.append(discord.EmbedField(name="Twinks", value=field.value + "\n" + new_twink_entry, inline=False))
+                        found = True
+                    else:
+                        new_fields.append(field)
+                
+                if not found:
+                    new_fields.append(discord.EmbedField(name="Twinks", value=new_twink_entry, inline=False))
+                
+                old_embed.fields = new_fields
+                await message.edit(embed=old_embed)
+                break
 
     @app_commands.command(name="member_remove", description="Löscht einen Member komplett aus der DB")
     @app_commands.checks.has_permissions(administrator=True)
