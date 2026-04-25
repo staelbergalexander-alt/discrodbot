@@ -291,33 +291,37 @@ async def full_delete(uid):
 async def edit_char():
     form = await request.form
     old_uid = form.get('old_uid')
-    new_uid = form.get('new_uid', '').strip()
+    raw_new_uid = form.get('new_uid', '').strip()
+    
+    # Bereinigt die ID: Entfernt < @ ! > falls der User eine Erwähnung kopiert hat
+    new_uid = re.sub(r'[^0-9]', '', raw_new_uid)
+    
     idx = int(form.get('char_idx'))
     new_name = form.get('new_name', '').strip()
     new_realm = form.get('new_realm', '').strip()
 
-    if os.path.exists(DB_FILE):
+    if os.path.exists(DB_FILE) and new_uid:
         with open(DB_FILE, "r", encoding="utf-8") as f:
             try: db = json.load(f)
             except: db = {}
         
         if old_uid in db and 0 <= idx < len(db[old_uid]["chars"]):
-            # 1. Den Charakter aus dem alten Eintrag herausholen
+            # 1. Charakter aus altem Eintrag extrahieren
             char_data = db[old_uid]["chars"].pop(idx)
             
-            # 2. Daten mit den neuen Werten aus dem Formular aktualisieren
+            # 2. Daten aktualisieren
             char_data["name"] = new_name
             char_data["realm"] = new_realm
 
-            # 3. Falls der alte User keine Chars mehr hat, löschen wir ihn ganz
+            # 3. Alten User löschen, wenn er keine Chars mehr hat
             if not db[old_uid]["chars"]:
                 del db[old_uid]
 
-            # 4. Beim neuen Besitzer (new_uid) einfügen
+            # 4. Beim neuen Besitzer (bereinigte ID) einfügen
             if new_uid not in db:
                 db[new_uid] = {"chars": []}
             
-            # Dubletten-Check beim neuen Besitzer
+            # Dubletten-Check
             if not any(c['name'].lower() == new_name.lower() for c in db[new_uid]["chars"]):
                 db[new_uid]["chars"].append(char_data)
             
