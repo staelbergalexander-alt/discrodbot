@@ -273,7 +273,7 @@ async def delete_char(uid, char_idx):
                     
     return redirect('/')
     
- @app.route('/action/<action>/<uid>')
+@app.route('/action/<action>/<uid>')
 async def member_action(action, uid):
     if not bot_instance or not bot_instance.is_ready():
         return redirect('/')
