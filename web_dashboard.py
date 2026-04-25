@@ -9,7 +9,7 @@ from datetime import datetime
 
 app = Quart(__name__)
 
-# Konfiguration
+# --- KONFIGURATION ---
 DB_FILE = "/app/data/mitglieder_db.json" if os.path.exists("/app/data/") else "data/mitglieder_db.json"
 SERVER_ID = int(os.getenv('SERVER_ID') or 0)
 FORUM_CHANNEL_ID = int(os.getenv('FORUM_CHANNEL_ID') or 0)
@@ -61,16 +61,14 @@ class ActionButtons(discord.ui.View):
         guild = interaction.guild
         member = guild.get_member(self.applicant_id)
         if member:
-            role_mitglied = guild.get_role(MITGLIED_ROLLE_ID)
-            role_bewerber = guild.get_role(BEWERBER_ROLLE_ID)
+            role_m, role_b = guild.get_role(MITGLIED_ROLLE_ID), guild.get_role(BEWERBER_ROLLE_ID)
             try:
-                if role_bewerber in member.roles: await member.remove_roles(role_bewerber)
-                await member.add_roles(role_mitglied)
-                await interaction.response.send_message(f"✅ **{self.char_name}** wurde aufgenommen!", ephemeral=False)
+                if role_b in member.roles: await member.remove_roles(role_b)
+                await member.add_roles(role_m)
+                await interaction.response.send_message(f"✅ **{self.char_name}** wurde aufgenommen!")
             except Exception as e: await interaction.response.send_message(f"Fehler: {e}", ephemeral=True)
-        else: await interaction.response.send_message("User nicht gefunden.", ephemeral=True)
 
-# --- WEB DASHBOARD ---
+# --- WEB DASHBOARD ROUTES ---
 
 @app.route('/')
 async def index():
@@ -90,7 +88,11 @@ async def index():
         if guild:
             try:
                 mid = int(uid)
-                member = guild.get_member(mid) or await guild.fetch_member(mid)
+                member = guild.get_member(mid)
+                if not member: 
+                    try: member = await guild.fetch_member(mid)
+                    except: member = None
+                
                 if member:
                     display_name = member.display_name
                     rids = [r.id for r in member.roles]
@@ -102,10 +104,10 @@ async def index():
         processed_chars = []
         for idx, char in enumerate(user_data.get("chars", [])):
             live = await fetch_char_data(char['name'], char.get('realm', 'Blackhand'))
-            char_entry = char.copy()
-            char_entry.update(live)
-            char_entry['idx'] = idx # Wichtig für die Identifizierung beim Editieren
-            processed_chars.append(char_entry)
+            c_copy = char.copy()
+            c_copy.update(live)
+            c_copy['idx'] = idx
+            processed_chars.append(c_copy)
 
         enhanced_list.append({"uid": uid, "name": display_name, "chars": processed_chars, "role": role_info})
 
@@ -117,36 +119,37 @@ async def index():
     <head>
         <meta charset="UTF-8">
         <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
         <style>
-            body { font-family: 'Inter', sans-serif; background: #0b1120; }
+            body { font-family: 'Inter', sans-serif; background: #0b1120; color: #e2e8f0; }
             .card-gradient { background: linear-gradient(135deg, rgba(30,41,59,0.7) 0%, rgba(15,23,42,0.8) 100%); }
         </style>
         <title>Gilden Dashboard</title>
     </head>
-    <body class="text-slate-200 p-4 md:p-10">
+    <body class="p-4 md:p-10">
         <div class="container mx-auto max-w-6xl">
-            <div class="bg-slate-900/60 p-6 rounded-3xl border border-slate-800 mb-10 shadow-2xl">
-                <h1 class="text-2xl font-black text-white mb-4 uppercase italic">Gilden<span class="text-indigo-500">Management</span></h1>
+            <div class="bg-slate-900/60 p-8 rounded-3xl border border-slate-800 mb-10 shadow-2xl backdrop-blur-md">
+                <h1 class="text-3xl font-black italic uppercase text-white mb-6">Gilden<span class="text-indigo-500">Management</span></h1>
                 <form action="/add_applicant" method="post" class="flex flex-col md:flex-row gap-4">
-                    <input name="rio_link" placeholder="Raider.io Link..." class="flex-grow bg-slate-800 border border-slate-700 px-4 py-2 rounded-xl text-white outline-none focus:border-indigo-500" required>
-                    <input name="discord_id" placeholder="Discord ID" class="md:w-1/4 bg-slate-800 border border-slate-700 px-4 py-2 rounded-xl text-white outline-none" required>
-                    <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 px-6 py-2 rounded-xl font-bold uppercase text-sm">Hinzufügen</button>
+                    <input name="rio_link" placeholder="Raider.io Link..." class="flex-grow bg-slate-800 border border-slate-700 px-4 py-3 rounded-xl outline-none focus:border-indigo-500 text-white" required>
+                    <input name="discord_id" placeholder="Discord ID" class="md:w-1/4 bg-slate-800 border border-slate-700 px-4 py-3 rounded-xl outline-none focus:border-indigo-500 text-white" required>
+                    <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-8 py-3 rounded-xl transition-all uppercase text-sm">Hinzufügen</button>
                 </form>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {% for user in members_list %}
-                <div class="card-gradient rounded-3xl p-6 border border-slate-800 relative group transition-all">
+                <div class="card-gradient rounded-3xl p-6 border border-slate-800 relative group transition-all shadow-xl">
                     <div class="flex justify-between items-start mb-4">
                         <div>
-                            <h2 class="text-xl font-bold text-white">{{user.name}}</h2>
-                            <span class="text-[10px] font-bold text-{{user.role.color}}-400 uppercase">{{user.role.name}}</span>
+                            <h2 class="text-xl font-bold text-white leading-tight">{{user.name}}</h2>
+                            <span class="text-[10px] font-bold text-{{user.role.color}}-400 uppercase tracking-widest">{{user.role.name}}</span>
                         </div>
                         <div class="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                             {% if user.role.name == "Bewerber" %}
-                            <a href="/action/accept/{{user.uid}}" class="text-emerald-500 hover:scale-110">✅</a>
+                            <a href="/action/accept/{{user.uid}}" class="p-2 bg-emerald-500/20 text-emerald-500 rounded-lg hover:bg-emerald-500 hover:text-white" title="Annehmen">✅</a>
                             {% endif %}
-                            <a href="/full_delete/{{user.uid}}" class="text-red-500 hover:scale-110" onclick="return confirm('User komplett löschen?')">🗑️</a>
+                            <a href="/full_delete/{{user.uid}}" class="p-2 bg-red-500/20 text-red-500 rounded-lg hover:bg-red-500 hover:text-white" onclick="return confirm('User komplett löschen?')">🗑️</a>
                         </div>
                     </div>
 
@@ -156,8 +159,9 @@ async def index():
                             <div>
                                 <p class="font-bold text-slate-100">{{char.name}}</p>
                                 <p class="text-[10px] text-indigo-400 font-bold uppercase">{{char.class}} • {{char.ilvl}} iLvl</p>
+                                <a href="{{char.rio_url}}" target="_blank" class="text-[9px] text-orange-500 font-black hover:underline mt-1 inline-block">RIO ↗</a>
                             </div>
-                            <div class="flex gap-3 opacity-0 group-hover/char:opacity-100 transition-all">
+                            <div class="flex gap-2 opacity-0 group-hover/char:opacity-100 transition-all">
                                 <button onclick="openEdit('{{user.uid}}', '{{char.idx}}', '{{char.name}}', '{{char.realm}}')" class="text-slate-500 hover:text-indigo-400">✏️</button>
                                 <a href="/delete/{{user.uid}}/{{char.idx}}" class="text-slate-500 hover:text-red-500">✕</a>
                             </div>
@@ -185,7 +189,7 @@ async def index():
                     </div>
                     <div class="flex gap-3 pt-4">
                         <button type="submit" class="flex-grow bg-indigo-600 hover:bg-indigo-500 py-3 rounded-xl font-bold">Speichern</button>
-                        <button type="button" onclick="closeEdit()" class="px-6 py-3 bg-slate-800 rounded-xl font-bold">Abbrechen</button>
+                        <button type="button" onclick="closeEdit()" class="px-6 py-3 bg-slate-800 rounded-xl font-bold text-slate-400">Abbrechen</button>
                     </div>
                 </form>
             </div>
@@ -211,52 +215,39 @@ async def index():
 @app.route('/edit_char', methods=['POST'])
 async def edit_char():
     form = await request.form
-    uid = form.get('uid')
-    idx = int(form.get('char_idx'))
-    new_name = form.get('new_name').strip()
-    new_realm = form.get('new_realm').strip()
-
+    uid, idx = form.get('uid'), int(form.get('char_idx'))
+    new_name, new_realm = form.get('new_name').strip(), form.get('new_realm').strip()
     if os.path.exists(DB_FILE):
-        with open(DB_FILE, "r", encoding="utf-8") as f:
-            db = json.load(f)
-        
+        with open(DB_FILE, "r", encoding="utf-8") as f: db = json.load(f)
         if uid in db and 0 <= idx < len(db[uid]["chars"]):
             db[uid]["chars"][idx]["name"] = new_name
             db[uid]["chars"][idx]["realm"] = new_realm
-            
-            with open(DB_FILE, "w", encoding="utf-8") as f:
-                json.dump(db, f, indent=4, ensure_ascii=False)
-                
+            with open(DB_FILE, "w", encoding="utf-8") as f: json.dump(db, f, indent=4, ensure_ascii=False)
     return redirect('/')
-
-# --- Restliche Routen (add_applicant, delete_char, full_delete, member_action) bleiben wie gehabt ---
 
 @app.route('/add_applicant', methods=['POST'])
 async def add_applicant():
     form = await request.form
-    rio_link = form.get('rio_link', '').strip()
-    discord_id = form.get('discord_id', '').strip()
+    rio_link, discord_id = form.get('rio_link', '').strip(), form.get('discord_id', '').strip()
     if not rio_link or not discord_id: return redirect('/')
     name, realm = parse_rio_link(rio_link)
     if not name: return redirect('/')
     data = await fetch_char_data(name, realm)
     if bot_instance and bot_instance.is_ready():
         guild = bot_instance.get_guild(SERVER_ID)
-        member = guild.get_member(int(discord_id))
+        member = guild.get_member(int(discord_id)) or await guild.fetch_member(int(discord_id))
         if member:
-            role_gast = guild.get_role(GAST_ROLLE_ID)
-            role_bewerber = guild.get_role(BEWERBER_ROLLE_ID)
+            role_b, role_g = guild.get_role(BEWERBER_ROLLE_ID), guild.get_role(GAST_ROLLE_ID)
             try:
-                if role_gast in member.roles: await member.remove_roles(role_gast)
-                await member.add_roles(role_bewerber)
+                if role_g in member.roles: await member.remove_roles(role_g)
+                await member.add_roles(role_b)
             except: pass
         forum_channel = bot_instance.get_channel(FORUM_CHANNEL_ID)
         if forum_channel:
             embed = discord.Embed(title=f"🛡️ Neue Bewerbung: {name}", color=0x3498db, timestamp=datetime.now())
             embed.add_field(name="Charakter", value=f"**{name}** - {data['class']} ({data['spec']})", inline=False)
             view = ActionButtons(discord_id, name)
-            content = f"🔗 [Raider.io Profile]({rio_link})"
-            await forum_channel.create_thread(name=f"Bewerbung: {name}", embeds=[embed], content=content, view=view)
+            await forum_channel.create_thread(name=f"Bewerbung: {name}", embeds=[embed], view=view)
     with open(DB_FILE, "r+", encoding="utf-8") as f:
         try: db = json.load(f)
         except: db = {}
@@ -269,8 +260,7 @@ async def add_applicant():
 @app.route('/delete/<uid>/<int:char_idx>')
 async def delete_char(uid, char_idx):
     if os.path.exists(DB_FILE):
-        with open(DB_FILE, "r", encoding="utf-8") as f:
-            db = json.load(f)
+        with open(DB_FILE, "r", encoding="utf-8") as f: db = json.load(f)
         if uid in db and 0 <= char_idx < len(db[uid]["chars"]):
             db[uid]["chars"].pop(char_idx)
             if not db[uid]["chars"]: del db[uid]
