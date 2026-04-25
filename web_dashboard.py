@@ -53,7 +53,8 @@ async def fetch_char_data(name, realm):
 class ActionButtons(discord.ui.View):
     def __init__(self, applicant_id=None, char_name=None):
         super().__init__(timeout=None)
-        self.applicant_id = int(applicant_id)
+        # Säuberung der ID falls sie als String mit <@... landet
+        self.applicant_id = int(re.sub(r'[^0-9]', '', str(applicant_id)))
         self.char_name = char_name
 
     @discord.ui.button(label="Annehmen", style=discord.ButtonStyle.green, custom_id="btn_accept", emoji="✅")
@@ -82,17 +83,15 @@ async def index():
     guild = bot_instance.get_guild(SERVER_ID) if bot_instance and bot_instance.is_ready() else None
 
     for uid, user_data in members_data.items():
+        # Reparatur-Logik für IDs mit <@...
+        clean_uid = re.sub(r'[^0-9]', '', str(uid))
         role_info = {"name": "Gast", "color": "slate", "priority": 4}
-        display_name = f"User {uid}"
+        display_name = f"User {clean_uid}"
         
-        if guild:
+        if guild and clean_uid:
             try:
-                mid = int(uid)
-                member = guild.get_member(mid)
-                if not member: 
-                    try: member = await guild.fetch_member(mid)
-                    except: member = None
-                
+                mid = int(clean_uid)
+                member = guild.get_member(mid) or await guild.fetch_member(mid)
                 if member:
                     display_name = member.display_name
                     rids = [r.id for r in member.roles]
@@ -109,7 +108,7 @@ async def index():
             c_copy['idx'] = idx
             processed_chars.append(c_copy)
 
-        enhanced_list.append({"uid": uid, "name": display_name, "chars": processed_chars, "role": role_info})
+        enhanced_list.append({"uid": clean_uid, "name": display_name, "chars": processed_chars, "role": role_info})
 
     enhanced_list.sort(key=lambda x: x['role']['priority'])
 
@@ -206,7 +205,7 @@ async def index():
         <script>
             function openEdit(uid, idx, name, realm) {
                 document.getElementById('edit_uid').value = uid;
-                document.getElementById('display_uid').value = uid; // Setzt die aktuelle ID ins Feld
+                document.getElementById('display_uid').value = uid;
                 document.getElementById('edit_idx').value = idx;
                 document.getElementById('edit_name').value = name;
                 document.getElementById('edit_realm').value = realm;
@@ -224,78 +223,91 @@ async def index():
 @app.route('/add_applicant', methods=['POST'])
 async def add_applicant():
     form = await request.form
-    rio_link, discord_id = form.get('rio_link', '').strip(), form.get('discord_id', '').strip()
+    rio_link = form.get('rio_link', '').strip()
+    discord_id = re.sub(r'[^0-9]', '', form.get('discord_id', '').strip())
+    
     if not rio_link or not discord_id: return redirect('/')
     name, realm = parse_rio_link(rio_link)
     if not name: return redirect('/')
     data = await fetch_char_data(name, realm)
+    
     if bot_instance and bot_instance.is_ready():
-        guild = bot_instance.get_guild(SERVER_ID)
-        member = guild.get_member(int(discord_id)) or await guild.fetch_member(int(discord_id))
-        if member:
-            role_b, role_g = guild.get_role(BEWERBER_ROLLE_ID), guild.get_role(GAST_ROLLE_ID)
-            try:
+        try:
+            guild = bot_instance.get_guild(SERVER_ID)
+            member = guild.get_member(int(discord_id)) or await guild.fetch_member(int(discord_id))
+            if member:
+                role_b, role_g = guild.get_role(BEWERBER_ROLLE_ID), guild.get_role(GAST_ROLLE_ID)
                 if role_g in member.roles: await member.remove_roles(role_g)
                 await member.add_roles(role_b)
-            except: pass
-        forum_channel = bot_instance.get_channel(FORUM_CHANNEL_ID)
-        if forum_channel:
-            embed = discord.Embed(title=f"🛡️ Neue Bewerbung: {name}", color=0x3498db, timestamp=datetime.now())
-            embed.add_field(name="Charakter", value=f"**{name}** - {data['class']} ({data['spec']})", inline=False)
-            view = ActionButtons(discord_id, name)
-            await forum_channel.create_thread(name=f"Bewerbung: {name}", embeds=[embed], view=view)
+            
+            forum_channel = bot_instance.get_channel(FORUM_CHANNEL_ID)
+            if forum_channel:
+                embed = discord.Embed(title=f"🛡️ Neue Bewerbung: {name}", color=0x3498db, timestamp=datetime.now())
+                embed.add_field(name="Charakter", value=f"**{name}** - {data['class']} ({data['spec']})", inline=False)
+                view = ActionButtons(discord_id, name)
+                await forum_channel.create_thread(name=f"Bewerbung: {name}", embeds=[embed], view=view)
+        except: pass
+
     with open(DB_FILE, "r+", encoding="utf-8") as f:
         try: db = json.load(f)
         except: db = {}
         if discord_id not in db: db[discord_id] = {"chars": []}
-        if not any(c['name'] == name for c in db[discord_id]["chars"]):
+        if not any(c['name'].lower() == name.lower() for c in db[discord_id]["chars"]):
             db[discord_id]["chars"].append({"name": name, "realm": realm})
         f.seek(0); json.dump(db, f, indent=4, ensure_ascii=False); f.truncate()
     return redirect('/')
 
 @app.route('/delete/<uid>/<int:char_idx>')
 async def delete_char(uid, char_idx):
+    clean_uid = re.sub(r'[^0-9]', '', str(uid))
     if os.path.exists(DB_FILE):
-        with open(DB_FILE, "r", encoding="utf-8") as f: db = json.load(f)
-        if uid in db and 0 <= char_idx < len(db[uid]["chars"]):
-            db[uid]["chars"].pop(char_idx)
-            if not db[uid]["chars"]: del db[uid]
-            with open(DB_FILE, "w", encoding="utf-8") as f: json.dump(db, f, indent=4, ensure_ascii=False)
+        with open(DB_FILE, "r", encoding="utf-8") as f:
+            try: db = json.load(f)
+            except: db = {}
+        
+        # Kaputte Keys finden (mit <@)
+        actual_key = uid if uid in db else next((k for k in db if re.sub(r'[^0-9]', '', str(k)) == clean_uid), None)
+        
+        if actual_key and 0 <= char_idx < len(db[actual_key]["chars"]):
+            db[actual_key]["chars"].pop(char_idx)
+            if not db[actual_key]["chars"]: del db[actual_key]
+            with open(DB_FILE, "w", encoding="utf-8") as f:
+                json.dump(db, f, indent=4, ensure_ascii=False)
     return redirect('/')
 
 @app.route('/action/<action>/<uid>')
 async def member_action(action, uid):
+    clean_uid = re.sub(r'[^0-9]', '', str(uid))
     if bot_instance and bot_instance.is_ready():
-        guild = bot_instance.get_guild(SERVER_ID)
-        member = guild.get_member(int(uid)) or await guild.fetch_member(int(uid))
-        if member:
-            role_m, role_b, role_g = guild.get_role(MITGLIED_ROLLE_ID), guild.get_role(BEWERBER_ROLLE_ID), guild.get_role(GAST_ROLLE_ID)
-            try:
+        try:
+            guild = bot_instance.get_guild(SERVER_ID)
+            member = guild.get_member(int(clean_uid)) or await guild.fetch_member(int(clean_uid))
+            if member:
+                role_m, role_b, role_g = guild.get_role(MITGLIED_ROLLE_ID), guild.get_role(BEWERBER_ROLLE_ID), guild.get_role(GAST_ROLLE_ID)
                 if action == "accept":
                     await member.remove_roles(role_b); await member.add_roles(role_m)
                 elif action == "decline":
                     await member.remove_roles(role_b); await member.add_roles(role_g)
-            except: pass
+        except: pass
     return redirect('/')
 
 @app.route('/full_delete/<uid>')
 async def full_delete(uid):
     if os.path.exists(DB_FILE):
-        with open(DB_FILE, "r", encoding="utf-8") as f: db = json.load(f)
+        with open(DB_FILE, "r", encoding="utf-8") as f:
+            try: db = json.load(f)
+            except: db = {}
         if uid in db:
             del db[uid]
-            with open(DB_FILE, "w", encoding="utf-8") as f: json.dump(db, f, indent=4, ensure_ascii=False)
+            with open(DB_FILE, "w", encoding="utf-8") as f:
+                json.dump(db, f, indent=4, ensure_ascii=False)
     return redirect('/')
-    
+
 @app.route('/edit_char', methods=['POST'])
 async def edit_char():
     form = await request.form
     old_uid = form.get('old_uid')
-    raw_new_uid = form.get('new_uid', '').strip()
-    
-    # Bereinigt die ID: Entfernt < @ ! > falls der User eine Erwähnung kopiert hat
-    new_uid = re.sub(r'[^0-9]', '', raw_new_uid)
-    
+    new_uid = re.sub(r'[^0-9]', '', form.get('new_uid', '').strip())
     idx = int(form.get('char_idx'))
     new_name = form.get('new_name', '').strip()
     new_realm = form.get('new_realm', '').strip()
@@ -305,23 +317,21 @@ async def edit_char():
             try: db = json.load(f)
             except: db = {}
         
-        if old_uid in db and 0 <= idx < len(db[old_uid]["chars"]):
-            # 1. Charakter aus altem Eintrag extrahieren
-            char_data = db[old_uid]["chars"].pop(idx)
-            
-            # 2. Daten aktualisieren
+        # Erkennt sowohl saubere als auch kaputte (mit <@) IDs als Ursprung
+        clean_old_uid = re.sub(r'[^0-9]', '', str(old_uid))
+        actual_old_key = old_uid if old_uid in db else next((k for k in db if re.sub(r'[^0-9]', '', str(k)) == clean_old_uid), None)
+
+        if actual_old_key and 0 <= idx < len(db[actual_old_key]["chars"]):
+            char_data = db[actual_old_key]["chars"].pop(idx)
             char_data["name"] = new_name
             char_data["realm"] = new_realm
 
-            # 3. Alten User löschen, wenn er keine Chars mehr hat
-            if not db[old_uid]["chars"]:
-                del db[old_uid]
+            if not db[actual_old_key]["chars"]:
+                del db[actual_old_key]
 
-            # 4. Beim neuen Besitzer (bereinigte ID) einfügen
             if new_uid not in db:
                 db[new_uid] = {"chars": []}
             
-            # Dubletten-Check
             if not any(c['name'].lower() == new_name.lower() for c in db[new_uid]["chars"]):
                 db[new_uid]["chars"].append(char_data)
             
