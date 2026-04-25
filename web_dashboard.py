@@ -31,7 +31,7 @@ def parse_rio_link(link):
         return name, realm
     return None, None
 
-aasync def fetch_char_data(name, realm):
+async def fetch_char_data(name, realm):
     # Entfernt Leerzeichen und sorgt für Kleinschreibung
     clean_name = name.strip().lower()
     clean_realm = realm.strip().lower().replace(" ", "-")
