@@ -221,19 +221,6 @@ async def index():
     """
     return await render_template_string(html_template, members_list=enhanced_list)
 
-@app.route('/edit_char', methods=['POST'])
-async def edit_char():
-    form = await request.form
-    uid, idx = form.get('uid'), int(form.get('char_idx'))
-    new_name, new_realm = form.get('new_name').strip(), form.get('new_realm').strip()
-    if os.path.exists(DB_FILE):
-        with open(DB_FILE, "r", encoding="utf-8") as f: db = json.load(f)
-        if uid in db and 0 <= idx < len(db[uid]["chars"]):
-            db[uid]["chars"][idx]["name"] = new_name
-            db[uid]["chars"][idx]["realm"] = new_realm
-            with open(DB_FILE, "w", encoding="utf-8") as f: json.dump(db, f, indent=4, ensure_ascii=False)
-    return redirect('/')
-
 @app.route('/add_applicant', methods=['POST'])
 async def add_applicant():
     form = await request.form
@@ -304,32 +291,33 @@ async def full_delete(uid):
 async def edit_char():
     form = await request.form
     old_uid = form.get('old_uid')
-    new_uid = form.get('new_uid').strip() # Die ID aus dem Formular
+    new_uid = form.get('new_uid', '').strip()
     idx = int(form.get('char_idx'))
-    new_name = form.get('new_name').strip()
-    new_realm = form.get('new_realm').strip()
+    new_name = form.get('new_name', '').strip()
+    new_realm = form.get('new_realm', '').strip()
 
     if os.path.exists(DB_FILE):
         with open(DB_FILE, "r", encoding="utf-8") as f:
-            db = json.load(f)
+            try: db = json.load(f)
+            except: db = {}
         
         if old_uid in db and 0 <= idx < len(db[old_uid]["chars"]):
-            # 1. Den Charakter aus dem alten Eintrag extrahieren
+            # 1. Den Charakter aus dem alten Eintrag herausholen
             char_data = db[old_uid]["chars"].pop(idx)
             
-            # 2. Daten aktualisieren
+            # 2. Daten mit den neuen Werten aus dem Formular aktualisieren
             char_data["name"] = new_name
             char_data["realm"] = new_realm
 
-            # 3. Falls der alte Eintrag jetzt leer ist -> löschen
+            # 3. Falls der alte User keine Chars mehr hat, löschen wir ihn ganz
             if not db[old_uid]["chars"]:
                 del db[old_uid]
 
-            # 4. Beim neuen Besitzer hinzufügen
+            # 4. Beim neuen Besitzer (new_uid) einfügen
             if new_uid not in db:
                 db[new_uid] = {"chars": []}
             
-            # Check gegen Dubletten beim neuen Besitzer
+            # Dubletten-Check beim neuen Besitzer
             if not any(c['name'].lower() == new_name.lower() for c in db[new_uid]["chars"]):
                 db[new_uid]["chars"].append(char_data)
             
