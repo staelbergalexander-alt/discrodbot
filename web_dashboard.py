@@ -175,17 +175,25 @@ async def index():
 
         <div id="editModal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <div class="bg-slate-900 border border-slate-800 p-8 rounded-3xl w-full max-w-md shadow-2xl">
-                <h3 class="text-xl font-bold text-white mb-6">Charakter bearbeiten</h3>
+                <h3 class="text-xl font-bold text-white mb-6">Charakter bearbeiten / Verschieben</h3>
                 <form action="/edit_char" method="post" class="space-y-4">
-                    <input type="hidden" name="uid" id="edit_uid">
+                    <input type="hidden" name="old_uid" id="edit_uid">
                     <input type="hidden" name="char_idx" id="edit_idx">
+                    
                     <div>
-                        <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Name</label>
-                        <input name="new_name" id="edit_name" class="w-full bg-slate-800 border border-slate-700 px-4 py-2 rounded-xl text-white outline-none focus:border-indigo-500">
+                        <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Discord ID (Besitzer)</label>
+                        <input name="new_uid" id="display_uid" class="w-full bg-slate-950 border border-slate-700 px-4 py-2 rounded-xl text-indigo-400 font-mono outline-none focus:border-indigo-500">
+                        <p class="text-[9px] text-slate-500 mt-1">Ändere die ID, um den Char einem anderen User zuzuweisen.</p>
                     </div>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Server</label>
-                        <input name="new_realm" id="edit_realm" class="w-full bg-slate-800 border border-slate-700 px-4 py-2 rounded-xl text-white outline-none focus:border-indigo-500">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Name</label>
+                            <input name="new_name" id="edit_name" class="w-full bg-slate-800 border border-slate-700 px-4 py-2 rounded-xl text-white outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Server</label>
+                            <input name="new_realm" id="edit_realm" class="w-full bg-slate-800 border border-slate-700 px-4 py-2 rounded-xl text-white outline-none">
+                        </div>
                     </div>
                     <div class="flex gap-3 pt-4">
                         <button type="submit" class="flex-grow bg-indigo-600 hover:bg-indigo-500 py-3 rounded-xl font-bold">Speichern</button>
@@ -198,6 +206,7 @@ async def index():
         <script>
             function openEdit(uid, idx, name, realm) {
                 document.getElementById('edit_uid').value = uid;
+                document.getElementById('display_uid').value = uid; // Setzt die aktuelle ID ins Feld
                 document.getElementById('edit_idx').value = idx;
                 document.getElementById('edit_name').value = name;
                 document.getElementById('edit_realm').value = realm;
@@ -289,6 +298,44 @@ async def full_delete(uid):
         if uid in db:
             del db[uid]
             with open(DB_FILE, "w", encoding="utf-8") as f: json.dump(db, f, indent=4, ensure_ascii=False)
+    return redirect('/')
+    
+@app.route('/edit_char', methods=['POST'])
+async def edit_char():
+    form = await request.form
+    old_uid = form.get('old_uid')
+    new_uid = form.get('new_uid').strip() # Die ID aus dem Formular
+    idx = int(form.get('char_idx'))
+    new_name = form.get('new_name').strip()
+    new_realm = form.get('new_realm').strip()
+
+    if os.path.exists(DB_FILE):
+        with open(DB_FILE, "r", encoding="utf-8") as f:
+            db = json.load(f)
+        
+        if old_uid in db and 0 <= idx < len(db[old_uid]["chars"]):
+            # 1. Den Charakter aus dem alten Eintrag extrahieren
+            char_data = db[old_uid]["chars"].pop(idx)
+            
+            # 2. Daten aktualisieren
+            char_data["name"] = new_name
+            char_data["realm"] = new_realm
+
+            # 3. Falls der alte Eintrag jetzt leer ist -> löschen
+            if not db[old_uid]["chars"]:
+                del db[old_uid]
+
+            # 4. Beim neuen Besitzer hinzufügen
+            if new_uid not in db:
+                db[new_uid] = {"chars": []}
+            
+            # Check gegen Dubletten beim neuen Besitzer
+            if not any(c['name'].lower() == new_name.lower() for c in db[new_uid]["chars"]):
+                db[new_uid]["chars"].append(char_data)
+            
+            with open(DB_FILE, "w", encoding="utf-8") as f:
+                json.dump(db, f, indent=4, ensure_ascii=False)
+                
     return redirect('/')
 
 async def run_web(bot=None):
