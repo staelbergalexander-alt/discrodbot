@@ -95,18 +95,24 @@ class MemberManagement(commands.Cog):
         real_name = user_data.get("real_name", "Unbekannt")
         target_thread = None
         
-        # Suche nach dem Thread (per ID im Namen oder gespeicherter Thread-ID)
-        for thread in forum.threads:
-            if str(member_id) in thread.name:
+        # 1. Verbesserte Suche: Wir suchen nach der ID ODER dem Namen im Thread-Titel
+        # Wir durchsuchen sowohl aktive als auch archivierte Threads
+        threads = forum.threads + [t async for t in forum.archived_threads()]
+        
+        for thread in threads:
+            # Suche nach der Discord-ID oder dem Realnamen im Titel
+            if str(member_id) in thread.name or (real_name != "Unbekannt" and real_name.lower() in thread.name.lower()):
                 target_thread = thread
                 break
         
+        # 2. Nur wenn absolut nichts gefunden wurde, neuen Thread erstellen
         if not target_thread:
             target_thread = await forum.create_thread(
                 name=f"Eintrag: {real_name} | {member_id}", 
-                content=f"Profil für <@{member_id}>"
+                content=f"Profil-Historie für <@{member_id}> ({real_name})"
             )
 
+        # 3. Das Embed erstellen (Fehler 'EmbedField' behoben durch direkte Nutzung von add_field)
         wcl_link = f"https://www.warcraftlogs.com/character/eu/{char_info['realm']}/{char_info['name']}"
         rio_link = f"https://raider.io/characters/eu/{char_info['realm']}/{char_info['name']}"
 
@@ -128,6 +134,7 @@ class MemberManagement(commands.Cog):
         footer_text = f"Twink von {owner.display_name}" if owner else f"Twink von {real_name}"
         embed.set_footer(text=footer_text)
 
+        # 4. Nachricht im gefundenen (oder neuen) Thread posten
         await target_thread.send(embed=embed)
 
     @app_commands.command(name="member_remove", description="Löscht einen Member komplett aus der DB")
