@@ -73,6 +73,35 @@ class MemberManagement(commands.Cog):
             await interaction.response.send_message(f"✅ **{char_info['name']}** wurde hinzugefügt!")
         else:
             await interaction.response.send_message("⚠️ Charakter existiert bereits.", ephemeral=True)
+            
+    async def send_twink_info_to_forum(guild, member, char_data, real_name, join_date):
+        forum = guild.get_channel(FORUM_CHANNEL_ID)
+        if not forum:
+        return
+
+        # Design wie in deinem Screenshot
+        embed = discord.Embed(
+        title=f"🛡️ Neuer Twink: {char_data['name']}", 
+        color=discord.Color.blue()
+    )
+    embed.add_field(name="Klasse", value=char_data['class'], inline=True)
+    embed.add_field(name="Spieler", value=real_name, inline=True)
+    embed.add_field(name="Server", value=char_data['realm'], inline=False)
+    embed.add_field(name="Eintrittsdatum", value=join_date, inline=True)
+    
+    # Links generieren
+    rio_url = f"https://raider.io/characters/eu/{char_data['realm']}/{char_data['name']}"
+    wcl_url = f"https://www.warcraftlogs.com/character/eu/{char_data['realm']}/{char_data['name']}"
+    embed.add_field(
+        name="Links", 
+        value=f"[Raider.io]({rio_url}) | [WarcraftLogs]({wcl_url})", 
+        inline=False
+    )
+    embed.set_footer(text=f"Twink von {member.display_name}")
+
+    # Im Forum posten (entweder neuer Thread oder Nachricht in bestehenden Thread)
+    # Wenn du es im Bewerber-Thread haben willst, musst du die Thread-ID speichern.
+    await forum.create_thread(name=f"Twink: {char_data['name']} | {real_name}", embed=embed)
 
     @app_commands.command(name="member_remove", description="Löscht einen Member komplett aus der DB")
     @app_commands.checks.has_permissions(administrator=True)
