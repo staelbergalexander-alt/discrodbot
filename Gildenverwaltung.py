@@ -30,6 +30,7 @@ class GildenBot(commands.Bot):
             'cogs.recruitment', 
             'cogs.member_management', 
             'cogs.dashboard',
+            'cogs.poll',
             'cogs.raid_bot',
             'cogs.kader_io'
         ]
@@ -48,9 +49,11 @@ class GildenBot(commands.Bot):
         try:
             from cogs.utilities import RaidPollView
             from cogs.raid_bot import RaidView, AdminControlView
+            from cogs.poll import LimitedPollView
             self.add_view(RaidPollView())
             self.add_view(RaidView())           # NEU REGISTRIEREN
-            self.add_view(AdminControlView())   # NEU REGISTRIEREN
+            self.add_view(AdminControlView())
+            self.add_view(LimitedPollView())            # NEU REGISTRIEREN
             print("✅ Persistente Raid-Umfrage registriert")
         except Exception as e:
             print(f"⚠️ Konnte RaidPollView nicht registrieren: {e}")
