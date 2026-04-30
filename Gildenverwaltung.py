@@ -55,9 +55,7 @@ class GildenBot(commands.Bot):
             self.add_view(RaidPollView())
             self.add_view(RaidView())
             self.add_view(AdminControlView())
-            self.add_view(LimitedPollView())
-
-            # --- DYNAMISCHE UMFRAGEN REAKTIVIEREN ---
+                        # --- DYNAMISCHE UMFRAGEN REAKTIVIEREN ---
             if os.path.exists(DATA_FILE):
                 with open(DATA_FILE, "r") as f:
                     polls = json.load(f)
