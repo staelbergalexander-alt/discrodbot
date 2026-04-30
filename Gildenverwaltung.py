@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 import os
 import asyncio
+import json
 from dotenv import load_dotenv
 
 # Importiere die Webserver-Funktion aus deiner web_dashboard.py
@@ -45,18 +46,31 @@ class GildenBot(commands.Bot):
         
         # 2. PERSISTENTE VIEWS REGISTRIEREN
         # Hier sagen wir dem Bot, dass er dauerhaft auf die Umfrage-Buttons achten soll.
-        # Wir importieren die View lokal hier drinnen, um Kreis-Import-Fehler zu vermeiden.
         try:
             from cogs.utilities import RaidPollView
             from cogs.raid_bot import RaidView, AdminControlView
-            from cogs.poll import LimitedPollView
+            from cogs.poll import LimitedPollView, DynamicPollView, DATA_FILE
+            
+            # Statische Views registrieren
             self.add_view(RaidPollView())
-            self.add_view(RaidView())           # NEU REGISTRIEREN
+            self.add_view(RaidView())
             self.add_view(AdminControlView())
-            self.add_view(LimitedPollView())            # NEU REGISTRIEREN
-            print("✅ Cogs geladen")
+            self.add_view(LimitedPollView())
+
+            # --- DYNAMISCHE UMFRAGEN REAKTIVIEREN ---
+            if os.path.exists(DATA_FILE):
+                with open(DATA_FILE, "r") as f:
+                    polls = json.load(f)
+                    for msg_id, settings in polls.items():
+                        # Wir laden die Optionen aus den gespeicherten Daten
+                        options = list(settings["results"].keys())
+                        # Registriere die View für jede Nachricht einzeln
+                        self.add_view(DynamicPollView(msg_id, options))
+                print(f"✅ {len(polls)} dynamische Umfragen reaktiviert")
+            
+            print("✅ Persistente Views und Umfragen registriert")
         except Exception as e:
-            print(f"⚠️ Konnte RaidPollView nicht registrieren: {e}")
+            print(f"⚠️ Fehler beim Registrieren der Views: {e}")
 
         # 3. Webserver im Hintergrund starten
         print("--- Starte Webserver ---")
