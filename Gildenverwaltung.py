@@ -49,7 +49,7 @@ class GildenBot(commands.Bot):
         try:
             from cogs.utilities import RaidPollView
             from cogs.raid_bot import RaidView, AdminControlView
-            from cogs.poll import LimitedPollView, DynamicPollView, DATA_FILE
+            from cogs.poll import DynamicPollView, DATA_FILE
             
             # Statische Views registrieren
             self.add_view(RaidPollView())
