@@ -16,7 +16,6 @@ def save_data(data):
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
-# Diese Klasse steuert die Buttons unter der Umfrage
 class DynamicPollView(discord.ui.View):
     def __init__(self, options):
         super().__init__(timeout=None)
@@ -35,79 +34,75 @@ class PollButton(discord.ui.Button):
         user_id = str(interaction.user.id)
         option = self.label
 
-        # Logik: Stimme abgeben oder zurückziehen (Toggle)
+        # Liste aller Optionen, für die dieser User bereits gestimmt hat
+        user_votes = [opt for opt, voters in poll["results"].items() if user_id in voters]
+
+        # Logik: Stimme entfernen
         if user_id in poll["results"][option]:
             poll["results"][option].remove(user_id)
         else:
-            # Gesamtlimit prüfen
-            current_total = sum(len(v) for v in poll["results"].values())
-            if current_total >= poll["max_total"]:
-                return await interaction.response.send_message(f"Limit von {poll['max_total']} Stimmen erreicht!", ephemeral=True)
+            # PRÜFUNG: Hat der User sein persönliches Limit erreicht?
+            if len(user_votes) >= poll["votes_per_person"]:
+                return await interaction.response.send_message(
+                    f"Du hast bereits {poll['votes_per_person']} Stimme(n) abgegeben. Mehr sind nicht erlaubt!", 
+                    ephemeral=True
+                )
             
             poll["results"][option].append(user_id)
 
         save_data(data)
 
-        # Embed aktualisieren (Balken-Design)
+        # Embed aktualisieren
         embed = interaction.message.embeds[0]
         new_desc = f"**{poll['question']}**\n\n"
         
-        total_now = sum(len(v) for v in poll["results"].values())
-        
         for opt, voters in poll["results"].items():
             count = len(voters)
-            # Balken berechnen (10 Segmente)
-            percent = (count / poll["max_total"]) if poll["max_total"] > 0 else 0
-            filled = int(percent * 10)
-            bar = "🟦" * filled + "⬛" * (10 - filled)
+            # Balken-Optik (basiert hier zur Veranschaulichung auf 10er Schritten)
+            bar = "🟦" * count if count <= 10 else "🟦" * 10 
+            bar = bar.ljust(10, "⬛")
             
             new_desc += f"**{opt}**\n{bar} `{count} Stimmen`\n\n"
 
-        new_desc += f"📊 **Gesamt: {total_now} / {poll['max_total']} Stimmen**"
+        new_desc += f"⚠️ *Limit: {poll['votes_per_person']} Stimme(n) pro Person*"
         embed.description = new_desc
         
         await interaction.response.edit_message(embed=embed)
 
-# Das Fenster (Modal), das sich öffnet
 class PollCreateModal(ui.Modal, title='Neue Umfrage erstellen'):
-    frage = ui.TextInput(label='Frage', placeholder='z.B. Welche Raidtage passen?', min_length=5)
+    frage = ui.TextInput(label='Frage', placeholder='Was möchtest du wissen?')
     optionen = ui.TextInput(
         label='Antworten (mit Komma trennen)', 
-        placeholder='Montag, Dienstag, Mittwoch', 
+        placeholder='Option 1, Option 2, Option 3',
         style=discord.TextStyle.paragraph
     )
-    limit = ui.TextInput(label='Gesamtlimit an Stimmen', placeholder='z.B. 44', default='44')
+    limit_pro_person = ui.TextInput(label='Stimmen pro Person', default='1')
 
     async def on_submit(self, interaction: discord.Interaction):
         try:
-            max_total = int(self.limit.value)
+            vpp = int(self.limit_pro_person.value)
         except ValueError:
             return await interaction.response.send_message("Das Limit muss eine Zahl sein!", ephemeral=True)
 
         opts = [o.strip() for o in self.optionen.value.split(',') if o.strip()]
-        if len(opts) < 2:
-            return await interaction.response.send_message("Bitte gib mindestens 2 Optionen an!", ephemeral=True)
-
-        # Initiales Embed erstellen
-        embed = discord.Embed(title="📊 Limitierte Umfrage", color=0x5865F2)
+        
+        embed = discord.Embed(title="📊 Umfrage", color=0x5865F2)
         desc = f"**{self.frage.value}**\n\n"
-        results = {}
+        results = {o: [] for o in opts}
+        
         for o in opts:
             desc += f"**{o}**\n⬛⬛⬛⬛⬛⬛⬛⬛⬛⬛ `0 Stimmen`\n\n"
-            results[o] = []
         
-        desc += f"📊 **Gesamt: 0 / {max_total} Stimmen**"
+        desc += f"⚠️ *Limit: {vpp} Stimme(n) pro Person*"
         embed.description = desc
 
-        # Nachricht senden
         await interaction.response.send_message("Umfrage wird erstellt...", ephemeral=True)
         msg = await interaction.channel.send(embed=embed, view=DynamicPollView(opts))
 
-        # Daten für Persistenz speichern
         data = load_data()
         data[str(msg.id)] = {
             "question": self.frage.value,
-            "max_total": max_total,
+            "votes_per_person": vpp,
             "results": results
         }
         save_data(data)
@@ -116,9 +111,8 @@ class PollCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="umfrage", description="Öffnet das Fenster für eine limitierte Umfrage")
+    @app_commands.command(name="umfrage", description="Umfrage mit Stimmen-Limit pro Person")
     async def umfrage(self, interaction: discord.Interaction):
-        # Das Fenster öffnen
         await interaction.response.send_modal(PollCreateModal())
 
 async def setup(bot):
