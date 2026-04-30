@@ -54,7 +54,7 @@ class GildenBot(commands.Bot):
             self.add_view(RaidView())           # NEU REGISTRIEREN
             self.add_view(AdminControlView())
             self.add_view(LimitedPollView())            # NEU REGISTRIEREN
-            print("✅ Persistente Raid-Umfrage registriert")
+            print("✅ Cogs geladen")
         except Exception as e:
             print(f"⚠️ Konnte RaidPollView nicht registrieren: {e}")
 
